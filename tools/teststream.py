@@ -246,7 +246,11 @@ def build_command(args: argparse.Namespace) -> list[str]:
     if args.capture_display:
         # Capture a rendered page.  build_command is only reached once the
         # display is known to have one on it.
-        cmd += ["-f", "x11grab", "-framerate", str(args.capture_fps),
+        # -draw_mouse 0 keeps the X pointer out of the frame. Xvfb's
+        # -nocursor does not: it suppresses only the default root cursor,
+        # while the browser sets a cursor on its own window that still draws.
+        cmd += ["-f", "x11grab", "-draw_mouse", "0",
+                "-framerate", str(args.capture_fps),
                 "-video_size", args.size, "-i", args.capture_display]
     else:
         # A test pattern with a moving element, so a frozen picture is

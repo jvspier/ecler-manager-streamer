@@ -77,7 +77,10 @@ shot)
     command -v ffmpeg >/dev/null || die "ffmpeg is needed for --screenshot:
   apt-get install -y ffmpeg"
     echo "→ grabbing $DISPLAY_NUM with ffmpeg x11grab (the streaming path)"
-    if ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$SIZE" \
+    # -draw_mouse 0: leave the X pointer out of the frame. See the Xvfb
+    # comment below for why this is done here and not on the display.
+    if ffmpeg -hide_banner -loglevel error -f x11grab -draw_mouse 0 \
+            -video_size "$SIZE" \
             -i "$DISPLAY_NUM" -frames:v 1 -y "$SHOT" 2>&1; then
         BYTES=$(stat -c%s "$SHOT" 2>/dev/null || echo 0)
         echo "  wrote $SHOT ($BYTES bytes)"
@@ -209,9 +212,13 @@ step "Starting Xvfb on $DISPLAY_NUM at $SIZE"
 # setsid plus closed inherited descriptors: without both, this script's caller
 # waits for these children even after the script itself has finished -- which
 # through `pct exec` means a terminal that never comes back.
-# -nocursor: without it the X pointer sits in the middle of the framebuffer
-# and gets captured into the stream, so a wall screen shows a stray arrow.
-setsid Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp -nocursor \
+# The X pointer sits in the middle of the framebuffer and would be captured
+# into the stream, but Xvfb -nocursor does NOT remove it: that flag only
+# suppresses the server's default root cursor, and Chromium sets a cursor on
+# its own window, which still draws. Tried and measured -- the arrow was still
+# there mid-frame. It is excluded at the capture instead, with ffmpeg's
+# -draw_mouse 0, in both this script's --screenshot and teststream.py.
+setsid Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp \
     >>"$XVFB_LOG" 2>&1 </dev/null &
 XVFB_PID=$!
 echo "$XVFB_PID Xvfb" >> "$PIDFILE"
