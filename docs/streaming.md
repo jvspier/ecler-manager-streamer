@@ -261,12 +261,25 @@ pct exec 108 -- apt-get update
 pct exec 108 -- apt-get install -y ffmpeg
 ```
 
+**Pin the outgoing interface.** Multicast has no route of its own, so on a host
+with more than one leg the kernel sends it out the **default-route** interface —
+which on a manager container is the management VLAN, not the TV VLAN. Nothing
+reports an error; the receiver simply shows "Waiting for connection". Always
+pass `--interface`:
+
+```bash
+--interface eth1
+```
+
+The tool warns when it sees several interfaces and no pin.
+
 **Step 1 — stream a test pattern to an unused channel.** Channels 1-4 are the
 real dashboards, so 5 is free (confirmed: a receiver set to CH5 shows
 "Waiting for connection…").
 
 ```bash
-pct exec 108 -- python3 -u /opt/eclermanager/tools/teststream.py --channel 5
+pct exec <ctid> -- python3 -u /opt/eclermanager/tools/teststream.py \
+    --channel 5 --interface eth1
 ```
 
 `--channel N` resolves the address itself — from the config if recorded, else
@@ -283,7 +296,25 @@ and with both watchdogs off nothing will fight the change. The card shows amber
 A real TV is the right test target — a spare receiver in a box has no PoE, so
 it cannot answer at all.
 
-**Step 3 — if it stays black, work through the variants.** Each tests a
+**Before the variants, prove the stream is reaching the VLAN at all.** The
+switch's IGMP snooping table is the arbiter: if the group appears there, the
+packets arrived and the question really is about the decoder. If it does not,
+the stream never left the host and no amount of encoder tuning will help.
+
+```
+show ip multicast vlan <tv-vlan>        ! the group should be listed
+```
+
+Also confirm the container is actually sending, and out of which leg:
+
+```bash
+apt-get install -y tcpdump
+tcpdump -ni eth1 -c 5 host 239.255.42.47      # should show packets
+tcpdump -ni eth0 -c 5 host 239.255.42.47      # should show nothing
+```
+
+**Step 3 — if the stream is on the VLAN and it still stays black, work through
+the variants.** Each tests a
 different guess about what the decoder wants:
 
 ```bash

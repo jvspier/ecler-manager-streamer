@@ -97,6 +97,47 @@ def group_for_channel(channel: int, config_path: str | None) -> str | None:
     return address
 
 
+def address_of(interface: str) -> str | None:
+    """The first IPv4 address on an interface, without extra dependencies."""
+    import subprocess
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "dev", interface],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if "inet" in parts:
+            return parts[parts.index("inet") + 1].split("/")[0]
+    return None
+
+
+def warn_if_multihomed() -> None:
+    """Say so when the egress interface is ambiguous, rather than failing mutely.
+
+    This is the single most likely reason a test stream never reaches a
+    receiver: the packets leave by the wrong leg and nothing reports an error.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return
+    legs = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) > 3 and parts[1] != "lo" and "inet" in parts:
+            legs.append(f"{parts[1]} ({parts[parts.index('inet') + 1]})")
+    if len(legs) > 1:
+        print("! this host has more than one interface:", file=sys.stderr)
+        for leg in legs:
+            print(f"    {leg}", file=sys.stderr)
+        print("  Multicast has no route of its own, so it will leave by the\n"
+              "  default route -- probably the wrong VLAN, silently. Pass\n"
+              "  --interface <iface> to pin it.\n", file=sys.stderr)
+
+
 def build_command(args: argparse.Namespace) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel, "-re"]
 
@@ -138,13 +179,18 @@ def build_command(args: argparse.Namespace) -> list[str]:
         cmd += ["-an"]
 
     target = f"{args.group}:{args.port}"
+    # On a multi-homed host, multicast has no route of its own, so the kernel
+    # sends it out the default-route interface.  On a manager container that is
+    # the management leg, not the TV VLAN -- the stream then never reaches the
+    # receivers.  localaddr pins the egress interface by source address.
+    local = f"&localaddr={args.local_addr}" if args.local_addr else ""
     if args.variant == "rtp":
         cmd += ["-f", "rtp_mpegts",
-                f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"]
+                f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}{local}"]
     else:
         cmd += ["-f", "mpegts", "-muxrate", "0",
                 f"udp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
-                "&overrun_nonfatal=1"]
+                f"&overrun_nonfatal=1{local}"]
     return cmd
 
 
@@ -162,6 +208,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="config to read channel addresses from "
                              "(default: the installed one)")
     parser.add_argument("--port", type=int, default=5004)
+    parser.add_argument("--interface", metavar="IFACE", default=None,
+                        help="send from this interface, e.g. eth1. Required on "
+                             "a host with more than one leg: multicast "
+                             "otherwise leaves via the default route, which is "
+                             "usually the wrong VLAN")
+    parser.add_argument("--local-addr", metavar="IP", default=None,
+                        help="send from this source address (the same thing, "
+                             "if you would rather name the address)")
     parser.add_argument("--ttl", type=int, default=4,
                         help="multicast TTL (default 4; 1 stays on the local "
                              "segment, which may not be enough)")
@@ -194,6 +248,16 @@ def main(argv: list[str] | None = None) -> int:
         args.group = group_for_channel(args.channel, args.config)
         if args.group is None:
             return 2
+
+    if args.interface and not args.local_addr:
+        args.local_addr = address_of(args.interface)
+        if args.local_addr is None:
+            print(f"✗ {args.interface} has no IPv4 address", file=sys.stderr)
+            return 2
+        print(f"→ sending from {args.interface} ({args.local_addr})",
+              file=sys.stderr)
+    if not args.local_addr:
+        warn_if_multihomed()
 
     try:
         address = ipaddress.ip_address(args.group)
