@@ -402,14 +402,41 @@ def build_command(args: argparse.Namespace) -> list[str]:
     # the kernel with nothing logged anywhere. Cheap insurance rather than a
     # measured fix -- at ~11 Mbit/s the default is probably adequate.
     sndbuf = "&buffer_size=8388608"
+
+    # Pace the bytes onto the wire, which -muxrate does NOT do.
+    #
+    # -muxrate makes the transport stream constant-rate in its timestamps and
+    # null padding. It says nothing about when the bytes are handed to the
+    # socket: ffmpeg encodes a frame every 33ms and then writes that whole
+    # frame's packets back to back, so a 200KB frame leaves as a ~1.6ms burst
+    # at line rate. A receiver with a small input buffer drops the tail of a
+    # burst it cannot absorb, and the picture tears from that point down with
+    # everything below it lost -- photographed on a wall screen.
+    #
+    # It fits every other observation: only large frames fail, the switch
+    # never loses anything at a 7 Mbit/s average, and a capture read back on
+    # the sending host decodes perfectly because a loopback socket has no
+    # such bottleneck. The hardware transmitter this replaces paces its
+    # output evenly, being built for the job.
+    #
+    # ffmpeg's udp protocol has bitrate/burst_bits for precisely this. Pace a
+    # little above the mux rate so pacing smooths bursts without ever
+    # becoming the constraint itself.
+    if args.no_pacing:
+        pacing = ""
+    else:
+        nominal = (int(args.muxrate) if args.muxrate != "0"
+                   else parse_bitrate(args.bitrate) * 2)
+        pacing = (f"&bitrate={int(nominal * 1.10)}"
+                  f"&burst_bits={TS_PKT_SIZE * 8 * 2}")
     if args.variant == "rtp":
         cmd += ["-f", "rtp_mpegts",
                 f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
-                f"{sndbuf}{local}"]
+                f"{sndbuf}{pacing}{local}"]
     else:
         cmd += ["-f", "mpegts", "-muxrate", args.muxrate,
                 f"udp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
-                f"&overrun_nonfatal=1{sndbuf}{local}"]
+                f"&overrun_nonfatal=1{sndbuf}{pacing}{local}"]
     return cmd
 
 
@@ -465,6 +492,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "declared H.264 level allows, which makes a "
                              "hardware decoder tear on photographic slides. "
                              "0 disables it")
+    parser.add_argument("--no-pacing", action="store_true",
+                        help="do not pace the bytes onto the wire. ffmpeg "
+                             "otherwise writes a whole frame's packets back "
+                             "to back at line rate, and a receiver with a "
+                             "small input buffer drops the tail of a large "
+                             "frame's burst")
     parser.add_argument("--no-bframes", action="store_true",
                         help="encode without B-frames. Removes decoder-side "
                              "frame reordering, which is what the hardware "

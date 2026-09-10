@@ -2222,6 +2222,22 @@ class TestStreamPacing(unittest.TestCase):
                            "--qmin", "0"])
         self.assertNotIn("-qmin", cmd)
 
+    def test_output_is_paced_a_little_above_the_mux_rate(self):
+        """-muxrate paces the stream's timestamps, not the bytes on the wire."""
+        cmd = self._build(["--group", "239.255.42.47", "--from-display", ":99",
+                           "--bitrate", "6M"])
+        url = cmd[-1]
+        muxrate = int(cmd[cmd.index("-muxrate") + 1])
+        paced = int(url.split("bitrate=")[-1].split("&")[0])
+        self.assertGreater(paced, muxrate)          # never the constraint
+        self.assertLess(paced, muxrate * 2)         # but still pacing
+        self.assertIn("burst_bits=", url)
+
+    def test_no_pacing_opts_out(self):
+        cmd = self._build(["--group", "239.255.42.47", "--from-display", ":99",
+                           "--no-pacing"])
+        self.assertNotIn("burst_bits", cmd[-1])
+
     def test_parse_bitrate_suffixes(self):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
         import teststream
