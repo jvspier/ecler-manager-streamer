@@ -16,6 +16,10 @@
 #   --browser <path>    override browser autodetection
 #   --stop              kill whatever this script started on --display
 #   --status            report what is running on --display
+#   --screenshot <path> grab the display through ffmpeg x11grab, the same way
+#                       streaming does, and say if it looks blank
+#   --kiosk             use --kiosk instead of a self-mapped window. Needs a
+#                       window manager on the display, or nothing is drawn
 #
 # Dependencies, on Debian/Ubuntu:
 #
@@ -31,6 +35,8 @@ DISPLAY_NUM=":99"
 SIZE="1920x1080"
 BROWSER=""
 ACTION="start"
+USE_KIOSK=false
+SHOT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -40,6 +46,8 @@ while [[ $# -gt 0 ]]; do
         --browser) BROWSER=${2:?--browser needs a path}; shift 2 ;;
         --stop)    ACTION="stop"; shift ;;
         --status)  ACTION="status"; shift ;;
+        --kiosk)   USE_KIOSK=true; shift ;;
+        --screenshot) SHOT=${2:?--screenshot needs a path}; ACTION="shot"; shift 2 ;;
         -h|--help) sed -n '2,28p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
         *)         echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -49,11 +57,48 @@ die() { echo "✗ $*" >&2; exit 1; }
 step() { echo; echo "→ $*"; }
 
 PIDFILE="/run/pagesource-${DISPLAY_NUM#:}.pids"
+if [[ "$USE_KIOSK" == true ]]; then
+    KIOSK_FLAGS="--kiosk"
+    APP_FLAG=""            # the URL is passed positionally in kiosk mode
+else
+    KIOSK_FLAGS=""
+    APP_FLAG=""            # filled in once URL is validated, below
+fi
 # The browser's own output is the only useful diagnostic when a page renders
 # black, so it is kept rather than discarded.
 LOGFILE="/tmp/pagesource-${DISPLAY_NUM#:}.log"
 
 case "$ACTION" in
+shot)
+    # Grab through ffmpeg's x11grab -- the same path teststream.py uses -- so
+    # this answers the question that matters, rather than what a different
+    # screenshot tool makes of the display.
+    command -v ffmpeg >/dev/null || die "ffmpeg is needed for --screenshot:
+  apt-get install -y ffmpeg"
+    echo "→ grabbing $DISPLAY_NUM with ffmpeg x11grab (the streaming path)"
+    if ffmpeg -hide_banner -loglevel error -f x11grab -video_size "$SIZE" \
+            -i "$DISPLAY_NUM" -frames:v 1 -y "$SHOT" 2>&1; then
+        BYTES=$(stat -c%s "$SHOT" 2>/dev/null || echo 0)
+        echo "  wrote $SHOT ($BYTES bytes)"
+        if [[ "$BYTES" -lt 5000 ]]; then
+            echo
+            echo "  ! that is small enough to be a blank screen. A 1920x1080"
+            echo "    PNG of anything real is tens of KB or more."
+            if command -v xwininfo >/dev/null; then
+                echo
+                echo "    windows on $DISPLAY_NUM:"
+                DISPLAY="$DISPLAY_NUM" xwininfo -root -children 2>/dev/null \
+                    | sed -n '/children:/,$p' | sed 's/^/      /' | head -10
+                echo "    A window that is not IsViewable, or is 1x1, is never"
+                echo "    composited to the root window -- which is what a"
+                echo "    capture reads."
+            fi
+        fi
+        exit 0
+    fi
+    die "ffmpeg could not read $DISPLAY_NUM. Is Xvfb running on it?
+  bash $0 --display $DISPLAY_NUM --status"
+    ;;
 status)
     if [[ -f "$PIDFILE" ]]; then
         echo "recorded for $DISPLAY_NUM:"
@@ -157,12 +202,23 @@ echo "  pid $XVFB_PID"
 WIDTH=${SIZE%x*}
 HEIGHT=${SIZE#*x}
 
+if [[ "$USE_KIOSK" == true ]]; then
+    APP_FLAG="$URL"
+else
+    # --app opens the page as its own chromeless window, which the browser maps
+    # itself: no window manager needed, unlike --kiosk.
+    APP_FLAG="--app=$URL"
+fi
+
 step "Starting $BROWSER on $DISPLAY_NUM"
 echo "  $URL"
-# --kiosk removes all chrome; the rest keeps a container-friendly browser quiet
-# and stops it drawing anything over the page.
+# Deliberately NOT --kiosk: kiosk mode asks a window manager to make the
+# window fullscreen, and a bare Xvfb has no window manager, so the request
+# goes nowhere and the window can end up never mapped -- a display that stays
+# black while the browser runs happily. --window-size with --app is mapped by
+# the browser itself and needs no WM.  Pass --kiosk to override.
 DISPLAY="$DISPLAY_NUM" "$BROWSER" \
-    --kiosk \
+    $KIOSK_FLAGS \
     --no-sandbox \
     --disable-gpu \
     --disable-dev-shm-usage \
@@ -174,7 +230,8 @@ DISPLAY="$DISPLAY_NUM" "$BROWSER" \
     --window-size="$WIDTH,$HEIGHT" \
     --window-position=0,0 \
     --user-data-dir="/tmp/pagesource-${DISPLAY_NUM#:}" \
-    "$URL" >>"$LOGFILE" 2>&1 &
+    $APP_FLAG \
+    >>"$LOGFILE" 2>&1 &
 BROWSER_PID=$!
 echo "$BROWSER_PID $BROWSER" >> "$PIDFILE"
 echo "  pid $BROWSER_PID, log $LOGFILE"
