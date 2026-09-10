@@ -116,7 +116,7 @@ The emulator reproduces the real wire format, including the awkward parts, and
 | | |
 |---|---|
 | [docs/protocol.md](docs/protocol.md) | How these devices behave on the wire. Read before touching `veo.py` — several findings are counter-intuitive |
-| [docs/deployment.md](docs/deployment.md) | Where to run it, container setup, systemd, login |
+| [docs/deployment.md](docs/deployment.md) | Where to run it, container setup, systemd, login, updating from git |
 | [docs/usage.md](docs/usage.md) | Every control, plus naming, commissioning, self-healing, backups |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | What went wrong on a real fleet and how each was diagnosed — including what did *not* work |
 | [docs/api.md](docs/api.md) | HTTP API |
@@ -155,7 +155,7 @@ eclermanager/poller.py      polling, drift detection, self-healing, actions
 eclermanager/server.py      JSON API, static files, login gate
 eclermanager/auth.py        password hashing and signed session cookies
 eclermanager/static/        the dashboard and login page
-deploy/                     systemd units and install scripts
+deploy/                     systemd units, install and update scripts
 tools/                      see docs/usage.md and docs/troubleshooting.md
 tests/test_veo.py           188 tests, no hardware needed
 ```

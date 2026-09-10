@@ -158,6 +158,61 @@ pct exec <ctid> -- timeout 3 bash -c 'cat </dev/null >/dev/tcp/10.0.2.11/9999' \
   && echo reachable
 ```
 
+## Updating from git (recommended)
+
+Once the code is in a git repository, the container can pull it directly, which
+is quicker and less error-prone than copying tarballs around.
+
+### One-time setup
+
+**In the container**, install git and make a read-only deploy key:
+
+```bash
+apt-get update && apt-get install -y git
+ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519 -C "eclermanager-deploy"
+cat /root/.ssh/id_ed25519.pub
+```
+
+**On GitHub**, add that public key at *Settings → Deploy keys → Add deploy key*.
+Leave "Allow write access" **unchecked** — the container only ever needs to
+read, and a read-only key cannot be used to push anything into the repository if
+the container is ever compromised.
+
+**Back in the container**, clone over SSH:
+
+```bash
+ssh -T git@github.com          # accept the host key; "successfully authenticated" is the goal
+rm -rf /root/eclermanager
+git clone git@github.com:<owner>/<repo>.git /root/eclermanager
+bash /root/eclermanager/deploy/install.sh
+```
+
+For a public repository, skip the key entirely and clone over HTTPS.
+
+### Every update after that
+
+```bash
+pct exec <ctid> -- bash /root/eclermanager/deploy/update.sh
+```
+
+That is the whole workflow: commit and push from your workstation, then run
+that one line. It fetches, prints the commits and the diffstat, **runs the test
+suite, and installs only if the tests pass** — so a broken commit cannot take
+down the running dashboard. Then `install.sh` does its usual work, which leaves
+`config.json` and the login file alone.
+
+Useful flags: `--dry-run` shows what would change and stops; `--branch <name>`
+pulls something other than the current branch; `--no-tests` skips the test run,
+which is not recommended.
+
+It refuses to run if there are uncommitted changes in the checkout, rather than
+discarding them — so a quick fix made directly in the container is not silently
+lost. Commit it, or `git -C /root/eclermanager checkout .` to drop it.
+
+### Copying a tarball instead
+
+Still fine, and the only option before the code is in a repository:
+
 ### Getting the code in and installed
 
 No SSH into the container is needed — `pct push` and `pct exec` run from the
