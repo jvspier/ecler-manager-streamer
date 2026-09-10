@@ -2128,5 +2128,26 @@ class TestHttpWithoutAuth(unittest.TestCase):
                     self.assertEqual(response.status, 200)
 
 
+class TestDashboardSmoke(unittest.TestCase):
+    """Run the dashboard's JavaScript, so a runtime error cannot ship.
+
+    `node --check` proves only that the file parses.  It cannot see a function
+    that is called and never declared -- which is how a dashboard that parses
+    cleanly threw on its first render and showed nothing but an error toast.
+    """
+
+    def test_dashboard_javascript_runs(self):
+        import shutil
+        import subprocess
+
+        if shutil.which("node") is None:
+            self.skipTest("node is not installed")
+        script = Path(__file__).resolve().parent / "smoke_dashboard.js"
+        result = subprocess.run(["node", str(script)], capture_output=True,
+                                text=True, timeout=60)
+        self.assertEqual(result.returncode, 0,
+                         msg=result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

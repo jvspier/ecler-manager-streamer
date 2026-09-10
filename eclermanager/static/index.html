@@ -353,9 +353,37 @@ const state = {
   advanced: null,          // receiver id whose device settings are showing
   setup: null,             // what is sitting on the factory-default address
   sort: "name",
+  // Values typed into an open editor, so a re-render does not discard them.
+  draft: {},
 };
 
 const STORE_KEY = "ecler.view";
+
+// --- open-editor drafts ------------------------------------------------
+// The 5s refresh re-renders the whole page. Without capturing what is in the
+// inputs first, anything half-typed would vanish; and skipping the render
+// instead leaves a stale "busy" overlay on a card whose action has finished.
+
+function captureDrafts() {
+  for (const input of document.querySelectorAll(
+        ".rename input, .advanced input, #setup-body input")) {
+    if (input.id) state.draft[input.id] = input.value;
+  }
+}
+
+function draftOr(id, fallback) {
+  return state.draft[id] !== undefined
+    ? state.draft[id]
+    : (fallback === null || fallback === undefined ? "" : fallback);
+}
+
+function clearDrafts(prefixes) {
+  for (const key of Object.keys(state.draft)) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      delete state.draft[key];
+    }
+  }
+}
 
 function loadView() {
   try {
