@@ -328,6 +328,27 @@ def build_command(args: argparse.Namespace) -> list[str]:
         "-r", str(args.fps),
     ]
 
+    if args.qmin:
+        # A quality floor, and the reason is a conformance limit rather than
+        # taste. A 6 Mbit constant-rate budget is far more than flat graphics
+        # need, so x264 drops to near-lossless -- q=2.0 measured on a live
+        # dashboard -- and on a photographic slide that produces a keyframe of
+        # one to two megabytes. H.264 level 4.0, which this stream declares,
+        # caps the size of a single coded frame well below that. A hardware
+        # decoder that sizes its buffers from the declared level truncates the
+        # frame, and the picture tears in a band that persists until the next
+        # keyframe, which is oversized in the same way. 98.5% of macroblocks
+        # are skip on a static slide, so nothing repairs it in between.
+        #
+        # Measured symptom: two of six slides tore consistently, both
+        # photographic; the flat ones never did. The stream itself was proven
+        # valid -- a 110MB capture off the wire decoded with zero errors
+        # offline -- so this is the decoder's limit, not corruption.
+        #
+        # 18 is visually lossless for text and graphics at 1080p and shrinks
+        # a photographic keyframe several-fold. --qmin 0 disables the floor.
+        cmd += ["-qmin", str(args.qmin)]
+
     if args.no_bframes:
         # B-frames make the decoder hold and reorder frames. A hardware IP
         # decoder of this class is built for what the matching hardware
@@ -437,6 +458,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="keyframe interval in seconds. This is also the "
                              "channel-switch latency (default 1.5)")
     parser.add_argument("--bitrate", default="6M")
+    parser.add_argument("--qmin", type=int, default=18, metavar="N",
+                        help="quality floor (default 18). Stops the encoder "
+                             "spending a constant-rate budget on near-"
+                             "lossless keyframes that exceed what the "
+                             "declared H.264 level allows, which makes a "
+                             "hardware decoder tear on photographic slides. "
+                             "0 disables it")
     parser.add_argument("--no-bframes", action="store_true",
                         help="encode without B-frames. Removes decoder-side "
                              "frame reordering, which is what the hardware "

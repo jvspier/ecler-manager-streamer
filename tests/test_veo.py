@@ -2210,6 +2210,18 @@ class TestStreamPacing(unittest.TestCase):
         # local socket, so it is allowed through to ffmpeg.
         self.assertTrue(teststream.display_is_live("host:0"))
 
+    def test_a_quality_floor_keeps_keyframes_within_the_declared_level(self):
+        """Oversized keyframes tore photographic slides on real hardware."""
+        cmd = self._build(["--group", "239.255.42.47", "--from-display", ":99"])
+        self.assertEqual(cmd[cmd.index("-qmin") + 1], "18")
+        # and the level it has to stay inside is still declared
+        self.assertEqual(cmd[cmd.index("-level") + 1], "4.0")
+
+    def test_qmin_zero_disables_the_floor(self):
+        cmd = self._build(["--group", "239.255.42.47", "--from-display", ":99",
+                           "--qmin", "0"])
+        self.assertNotIn("-qmin", cmd)
+
     def test_parse_bitrate_suffixes(self):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
         import teststream
