@@ -454,6 +454,119 @@ because an unprivileged LXC cannot use Chromium's sandbox, `--disable-gpu` and
 `--disable-dev-shm-usage` because there is no GPU and `/dev/shm` is small, and
 `--kiosk` plus the various `--disable-*` so nothing is drawn over the page.
 
+### Provisioning a dedicated streaming box
+
+Rendering pages in an unprivileged LXC was tried and abandoned. With
+`nesting=1`, 4 GB of RAM, `--no-sandbox` and `--disable-dev-shm-usage`,
+Chromium still died on startup with `Failed to send GetTerminationStatus
+message to zygote` — its process model wants namespace operations the container
+would not grant. Every other part of the pipeline worked there, including the
+capture: an `ffmpeg` grab of the empty display returned the X root cursor, so
+`x11grab` was reading the display correctly and there was simply nothing on it.
+
+On bare metal none of that applies. A plain Debian install is also less to
+reason about than a container that needs four flags and a security trade to run
+a browser.
+
+**1. Install Debian, minimal.** No desktop — this box renders pages to a
+framebuffer, so it needs no display stack of its own. Give it a static address
+on the TV VLAN. Keep it out of any Proxmox cluster: a single-purpose appliance
+gains nothing from membership, and two nodes without a QDevice means either
+being down blocks cluster changes.
+
+**2. Packages.**
+
+```bash
+apt-get update
+apt-get install -y xvfb chromium ffmpeg \
+    fonts-liberation fonts-dejavu-core fonts-noto-color-emoji \
+    intel-media-va-driver vainfo x11-utils imagemagick git
+```
+
+`fonts-noto-color-emoji` is worth having: a dashboard with emoji in its labels
+renders them as empty boxes without it, which looks like a rendering fault.
+
+**3. Confirm hardware encoding is available.**
+
+```bash
+vainfo | grep -i h264
+ls -l /dev/dri/renderD128
+```
+
+You want `VAProfileH264Main` and `VAEntrypointEncSlice` in that output. Without
+them the encode falls back to software, which works but costs several times the
+CPU.
+
+**4. Prove one stream by hand** before automating anything:
+
+```bash
+git clone <this repo> /opt/eclermanager
+python3 /opt/eclermanager/tools/teststream.py \
+    --channel 5 --local-addr <this box's TV-VLAN address> \
+    --url 'https://your-dashboard/' \
+    --capture-fps 15 --fps 30 --bitrate 10M --detach
+```
+
+Then set one TV to channel 5 and look at it. Check what is being captured
+first if it looks wrong:
+
+```bash
+bash /opt/eclermanager/tools/pagesource.sh --screenshot /tmp/shot.png
+```
+
+**5. One systemd unit per stream**, once a stream is proven. A template unit
+means one file for any number of dashboards:
+
+```ini
+# /etc/systemd/system/dashboard-stream@.service
+[Unit]
+Description=Dashboard stream on channel %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/dashboard-streams/%i.env
+ExecStart=/usr/bin/python3 /opt/eclermanager/tools/teststream.py \
+    --channel %i --url ${URL} --display :${DISPLAY_NUM} \
+    --local-addr ${LOCAL_ADDR} --capture-fps ${CAPTURE_FPS} \
+    --fps ${FPS} --bitrate ${BITRATE}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+With one env file per channel:
+
+```bash
+# /etc/dashboard-streams/5.env
+URL=https://your-dashboard/
+DISPLAY_NUM=99
+LOCAL_ADDR=10.0.2.50
+CAPTURE_FPS=15
+FPS=30
+BITRATE=10M
+```
+
+```bash
+systemctl enable --now dashboard-stream@5
+```
+
+**Give each stream its own display number.** `:99`, `:100`, `:101` — two
+browsers on one display would draw over each other.
+
+`Restart=always` matters more here than in most services: a dead stream is a
+black screen, and nobody notices a dashboard's *absence* quickly.
+
+**6. Then build the streamer service.** Running four template units by hand
+works, but the thing worth having is a small web page that lists dashboards,
+takes a URL and a channel, and starts and supervises the streams itself —
+reporting status over HTTP so this manager can show "channel 5, from streamer,
+healthy" in its group headings. That belongs in its own repository: it is
+set-and-forget where the manager is operational, and the two should not share a
+release or a failure.
+
 ### Sizing, if it works
 
 Researched, with a decision already made: **a dedicated node with a 7th or 8th
