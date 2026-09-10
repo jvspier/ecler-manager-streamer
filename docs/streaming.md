@@ -372,9 +372,25 @@ is the other half: it renders a page on a virtual display, and `--url` makes
 `teststream.py` capture that display rather than generate a pattern.
 
 ```bash
-apt-get install -y xvfb chromium
+apt-get install -y xvfb chromium fonts-liberation fonts-dejavu-core
 bash /opt/eclermanager/tools/pagesource.sh --url https://your-dashboard/
 ```
+
+**In an unprivileged container, this needs `nesting=1`.** Chromium's zygote
+clones with `CLONE_NEWUSER`, `CLONE_NEWPID` and `CLONE_NEWNET`, which the
+container blocks otherwise — and `--no-sandbox` does not help, because the
+process model uses those namespaces regardless. The symptom is precise: a
+window appears, the browser is gone a second later, and the log is full of
+dbus errors that have nothing to do with it.
+
+```bash
+pct set <ctid> -features nesting=1
+pct stop <ctid> && pct start <ctid>          # a features change needs a restart
+```
+
+Nesting exposes the host's procfs and sysfs to the guest, so it is worth
+thinking about where the browser work lives: on a dedicated streaming box that
+trade costs nothing, on a shared host it is a reason to move it.
 
 Nothing appears on a physical output — Xvfb is a framebuffer in memory. Check
 what actually rendered *before* streaming it anywhere, because a page that has
