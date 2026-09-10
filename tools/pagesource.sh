@@ -5,7 +5,7 @@
 # --url captures an X display, and this is what puts a page on one.
 #
 #     bash tools/pagesource.sh --url https://example.com/dashboard
-#     python3 tools/teststream.py --channel 5 --interface eth1 --url
+#     python3 tools/teststream.py --channel 5 --interface eth1 --from-display :99
 #
 # Nothing is displayed on a physical output: Xvfb is a framebuffer in memory.
 # The browser renders into it and ffmpeg reads it with x11grab.
@@ -335,13 +335,16 @@ cat <<EOF
 
 ✓ $DISPLAY_NUM is showing the page. Capture it with:
 
-    python3 tools/teststream.py --channel <N> --interface <iface> \\
-        --url --display $DISPLAY_NUM
+    python3 tools/teststream.py --channel <N> --local-addr <ip-on-tv-vlan> \\
+        --from-display $DISPLAY_NUM
 
-Check what it actually rendered, before streaming it anywhere:
+(--from-display reuses this display. teststream.py --url ADDRESS starts its
+own browser instead, which you do not want while this one is up.)
 
-    apt-get install -y x11-apps imagemagick
-    DISPLAY=$DISPLAY_NUM import -window root /tmp/page.png
+Check what it actually rendered, before streaming it anywhere -- this needs
+no extra packages, it grabs through the same ffmpeg path as the stream:
+
+    bash $0 --display $DISPLAY_NUM --screenshot /tmp/page.png
 
 Stop everything:
 
