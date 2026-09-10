@@ -379,9 +379,20 @@ hand: the UDP payload is set to **1316 bytes** (7 x 188). MPEG-TS packets are
 188 bytes and ffmpeg's default 1472-byte payload is not a multiple of that —
 exactly the sort of thing a cheap decoder refuses to parse.
 
-**Step 4 — capture a real page instead of a test pattern.** `tools/pagesource.sh`
-is the other half: it renders a page on a virtual display, and `--url` makes
-`teststream.py` capture that display rather than generate a pattern.
+**Step 4 — stream a real page instead of a test pattern.** One command does the
+whole pipeline: `--url` renders the page on a virtual display via
+`tools/pagesource.sh`, captures it, and takes the browser down again on
+`--stop`.
+
+```bash
+pct exec <ctid> -- python3 -u /opt/eclermanager/tools/teststream.py \
+    --channel 5 --local-addr <tv-vlan-address> \
+    --url 'https://your-dashboard/' --detach
+```
+
+Use `--from-display :99` instead when you already have a page up and want to
+reuse it — which is what you want while iterating on how the page looks, since
+it avoids restarting the browser for every attempt.
 
 ```bash
 apt-get install -y xvfb chromium fonts-liberation fonts-dejavu-core

@@ -9,10 +9,20 @@ Run it from something on the TV VLAN.  The manager container already has a leg
 there, so the quickest path is:
 
     apt-get install -y ffmpeg          # in the container
+
+    # a test pattern, to prove a receiver locks onto a software stream at all
     python3 tools/teststream.py --channel 5
 
-Then set one TV to channel 5 from the dashboard and look at it.  One click on
-that card's starred channel puts it back.
+    # or a real page: rendered on a virtual display, then captured
+    python3 tools/teststream.py --channel 5 --url https://example.com/dashboard
+
+Then set one TV to channel 5 and look at it.  One click on that card's starred
+channel puts it back.
+
+``--url`` handles the whole pipeline: it calls tools/pagesource.sh to put the
+page on a virtual display, captures that, and takes the browser down again on
+``--stop``.  Use ``--from-display :99`` instead when you have already started a
+page yourself and want to reuse it.
 
 **Addresses.** ``--channel N`` looks the address up in the config, or derives
 it from the pattern confirmed on this network, ``239.255.42.(42+N)`` -- channel
@@ -160,6 +170,23 @@ def warn_if_multihomed() -> None:
               "  --interface <iface> to pin it.\n", file=sys.stderr)
 
 
+def start_page(url: str, display: str, size: str) -> bool:
+    """Render a page on a virtual display, via tools/pagesource.sh."""
+    script = Path(__file__).resolve().parent / "pagesource.sh"
+    if not script.exists():
+        print(f"✗ {script} is missing", file=sys.stderr)
+        return False
+    print(f"→ rendering {url} on {display}", file=sys.stderr)
+    result = subprocess.run(
+        ["bash", str(script), "--url", url, "--display", display,
+         "--size", size])
+    if result.returncode != 0:
+        print("✗ the page could not be rendered, so there is nothing to "
+              "stream.", file=sys.stderr)
+        return False
+    return True
+
+
 def manage(pidfile: Path, *, stop: bool) -> int:
     """Report on, or stop, a stream started with --detach."""
     log = Path(str(pidfile).replace(".pid", ".log"))
@@ -193,6 +220,16 @@ def manage(pidfile: Path, *, stop: bool) -> int:
         else:
             print(f"pid {pid} was already gone")
         pidfile.unlink(missing_ok=True)
+
+        display_file = pidfile.with_suffix(".display")
+        if display_file.exists():
+            display = display_file.read_text().strip()
+            script = Path(__file__).resolve().parent / "pagesource.sh"
+            if script.exists():
+                print(f"also stopping the page on {display}")
+                subprocess.run(["bash", str(script), "--display", display,
+                                "--stop"])
+            display_file.unlink(missing_ok=True)
         return 0
 
     print(f"pid {pid}: {'running' if alive else 'GONE'}")
@@ -206,11 +243,11 @@ def manage(pidfile: Path, *, stop: bool) -> int:
 def build_command(args: argparse.Namespace) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel, "-re"]
 
-    if args.url:
-        # Capture a real page.  Needs Xvfb plus a browser already showing it on
-        # the given display; see --url in the help text.
+    if args.capture_display:
+        # Capture a rendered page.  build_command is only reached once the
+        # display is known to have one on it.
         cmd += ["-f", "x11grab", "-framerate", str(args.capture_fps),
-                "-video_size", args.size, "-i", args.display]
+                "-video_size", args.size, "-i", args.capture_display]
     else:
         # A test pattern with a moving element, so a frozen picture is
         # distinguishable from a working one at a glance.
@@ -300,10 +337,16 @@ def main(argv: list[str] | None = None) -> int:
                              "channel-switch latency (default 1.5)")
     parser.add_argument("--bitrate", default="6M")
     parser.add_argument("--size", default="1920x1080")
-    parser.add_argument("--url", action="store_true",
-                        help="capture an X display instead of a test pattern; "
-                             "needs Xvfb plus a browser already on --display")
-    parser.add_argument("--display", default=":99")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--url", metavar="ADDRESS", default=None,
+                        help="stream this web page: it is rendered on a "
+                             "virtual display with tools/pagesource.sh, then "
+                             "captured. Without this, a test pattern is sent")
+    source.add_argument("--from-display", metavar=":N", default=None,
+                        help="capture a display that already has a page on it, "
+                             "e.g. one you started with pagesource.sh yourself")
+    parser.add_argument("--display", default=":99",
+                        help="display to render on with --url (default :99)")
     parser.add_argument("--loglevel", default="info")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the ffmpeg command and stop")
@@ -325,6 +368,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.channel is None and not args.group:
         parser.error("one of --channel or --group is required to start a stream")
+
+    # One flag settles where the pixels come from, so build_command does not
+    # have to know how the display got its page.
+    args.capture_display = args.from_display
+    started_page = False
+    if args.url:
+        if not args.dry_run:
+            if not start_page(args.url, args.display, args.size):
+                return 1
+            started_page = True
+        args.capture_display = args.display
 
     if args.channel is not None:
         args.group = group_for_channel(args.channel, args.config)
@@ -395,6 +449,10 @@ def main(argv: list[str] | None = None) -> int:
             print(log.read_text()[-1500:], file=sys.stderr)
             return 1
         pidfile.write_text(str(process.pid))
+        if started_page:
+            # Record it so --stop takes the browser and display down too,
+            # rather than leaving them running invisibly.
+            pidfile.with_suffix(".display").write_text(args.display)
         print(f"→ running in the background as pid {process.pid}")
         print(f"  log:    {log}")
         print(f"  status: {sys.argv[0]} --port {args.port} --status")
