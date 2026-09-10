@@ -240,6 +240,17 @@ def manage(pidfile: Path, *, stop: bool) -> int:
     return 0 if alive else 1
 
 
+def parse_bitrate(value: str) -> int:
+    """"10M" -> 10000000. ffmpeg takes the suffix form, arithmetic does not."""
+    text = value.strip().lower().rstrip("bps").strip()
+    multiplier = 1
+    if text.endswith("k"):
+        multiplier, text = 1_000, text[:-1]
+    elif text.endswith("m"):
+        multiplier, text = 1_000_000, text[:-1]
+    return int(float(text) * multiplier)
+
+
 def build_command(args: argparse.Namespace) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel]
 
@@ -288,6 +299,33 @@ def build_command(args: argparse.Namespace) -> list[str]:
         "-r", str(args.fps),
     ]
 
+    if not args.vbr:
+        # Constant rate, and this matters more than it looks.
+        #
+        # A dashboard is a nearly static picture. Left to itself the encoder
+        # spends almost nothing on it -- measured 1.76 Mbit/s against a 10M
+        # cap, with q dropping to 0 -- and then has to burst when a slide
+        # crossfades. A hardware IP decoder with a small input buffer handles
+        # that badly, which is what put artifacts on the television.
+        #
+        # It also explains why the test pattern always looked perfect:
+        # testsrc changes every pixel of every frame, so it sits at the cap
+        # and the transport stream is constant-rate by accident.
+        #
+        # nal-hrd=cbr makes x264 pad the elementary stream to the target, and
+        # -muxrate pads the transport stream with null packets, so the
+        # receiver sees a steady arrival rate whatever the picture is doing.
+        # force-cfr keeps the frame timing constant too, which the HRD model
+        # requires.
+        video_bps = parse_bitrate(args.bitrate)
+        cmd += ["-minrate", args.bitrate,
+                "-x264-params", "nal-hrd=cbr:force-cfr=1"]
+        # ~15% over the video rate covers TS packetisation and the tables.
+        # Too low and ffmpeg refuses with "muxrate is too low".
+        args.muxrate = str(int(video_bps * 1.15))
+    else:
+        args.muxrate = "0"
+
     if args.audio:
         cmd += ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
                 "-shortest"]
@@ -304,7 +342,7 @@ def build_command(args: argparse.Namespace) -> list[str]:
         cmd += ["-f", "rtp_mpegts",
                 f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}{local}"]
     else:
-        cmd += ["-f", "mpegts", "-muxrate", "0",
+        cmd += ["-f", "mpegts", "-muxrate", args.muxrate,
                 f"udp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
                 f"&overrun_nonfatal=1{local}"]
     return cmd
@@ -355,6 +393,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="keyframe interval in seconds. This is also the "
                              "channel-switch latency (default 1.5)")
     parser.add_argument("--bitrate", default="6M")
+    parser.add_argument("--vbr", action="store_true",
+                        help="let the bitrate vary instead of padding to a "
+                             "constant rate. Smaller on the wire, but a "
+                             "hardware decoder can show artifacts when a "
+                             "mostly-static page suddenly bursts")
     parser.add_argument("--size", default="1920x1080")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--url", metavar="ADDRESS", default=None,

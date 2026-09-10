@@ -264,6 +264,16 @@ echo "  $URL"
 #   --disable-dev-shm-usage  /dev/shm is small in a container
 #   --app=<url>          a chromeless window the browser maps itself, so no
 #                        window manager is needed (unlike --kiosk)
+#   --disable-renderer-backgrounding, --disable-backgrounding-occluded-windows,
+#   --disable-background-timer-throttling
+#                        Chromium throttles a renderer it believes nobody is
+#                        looking at, and under a bare Xvfb there is no window
+#                        manager and no compositor to tell it otherwise. The
+#                        measured symptom: the browser sat at ~0% CPU while a
+#                        slideshow with crossfades was supposedly animating,
+#                        and the capture juddered. These three stop it
+#                        backgrounding itself. Verify with top: the browser
+#                        should show real CPU while the page animates.
 #   --test-type          suppresses the yellow "you are using an unsupported
 #                        command-line flag: --no-sandbox" infobar, which
 #                        otherwise steals ~70px off the top of every frame.
@@ -286,6 +296,9 @@ DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" \
     --disable-gpu \
     --disable-dev-shm-usage \
     --test-type \
+    --disable-background-timer-throttling \
+    --disable-backgrounding-occluded-windows \
+    --disable-renderer-backgrounding \
     --window-size="$WIDTH,$HEIGHT" \
     --user-data-dir="$PROFILE" \
     $KIOSK_FLAGS \

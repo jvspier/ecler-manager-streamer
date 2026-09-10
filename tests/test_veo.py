@@ -2182,6 +2182,33 @@ class TestStreamPacing(unittest.TestCase):
         # and it pages the generator, not the encoder: -re precedes -i
         self.assertLess(cmd.index("-re"), cmd.index("-i"))
 
+    def test_a_static_page_is_padded_to_a_constant_rate(self):
+        """Hardware decoders show artifacts when an idle stream bursts."""
+        cmd = self._build(["--group", "239.255.42.47",
+                           "--from-display", ":99", "--bitrate", "10M"])
+        self.assertEqual(cmd[cmd.index("-minrate") + 1], "10M")
+        self.assertIn("nal-hrd=cbr:force-cfr=1", cmd)
+        # The transport stream is padded too, a little above the video rate.
+        muxrate = int(cmd[cmd.index("-muxrate") + 1])
+        self.assertGreater(muxrate, 10_000_000)
+        self.assertLess(muxrate, 13_000_000)
+
+    def test_vbr_opts_out_of_the_padding(self):
+        cmd = self._build(["--group", "239.255.42.47",
+                           "--from-display", ":99", "--vbr"])
+        self.assertNotIn("-minrate", cmd)
+        self.assertEqual(cmd[cmd.index("-muxrate") + 1], "0")
+
+    def test_parse_bitrate_suffixes(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        import teststream
+
+        for text, expected in [("10M", 10_000_000), ("6m", 6_000_000),
+                               ("800k", 800_000), ("1500000", 1_500_000),
+                               ("2.5M", 2_500_000)]:
+            with self.subTest(text=text):
+                self.assertEqual(teststream.parse_bitrate(text), expected)
+
     def test_pointer_is_excluded_from_a_live_capture(self):
         cmd = self._build(["--group", "239.255.42.47",
                            "--from-display", ":99"])
