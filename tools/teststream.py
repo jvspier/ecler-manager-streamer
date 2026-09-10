@@ -338,13 +338,19 @@ def build_command(args: argparse.Namespace) -> list[str]:
     # the management leg, not the TV VLAN -- the stream then never reaches the
     # receivers.  localaddr pins the egress interface by source address.
     local = f"&localaddr={args.local_addr}" if args.local_addr else ""
+    # SO_SNDBUF. Linux defaults to a couple of hundred KB, and a constant-rate
+    # transport stream is written in bursts, so an overflow drops packets in
+    # the kernel with nothing logged anywhere. Cheap insurance rather than a
+    # measured fix -- at ~11 Mbit/s the default is probably adequate.
+    sndbuf = "&buffer_size=8388608"
     if args.variant == "rtp":
         cmd += ["-f", "rtp_mpegts",
-                f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}{local}"]
+                f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
+                f"{sndbuf}{local}"]
     else:
         cmd += ["-f", "mpegts", "-muxrate", args.muxrate,
                 f"udp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
-                f"&overrun_nonfatal=1{local}"]
+                f"&overrun_nonfatal=1{sndbuf}{local}"]
     return cmd
 
 
