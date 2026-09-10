@@ -120,7 +120,7 @@ The emulator reproduces the real wire format, including the awkward parts, and
 | [docs/usage.md](docs/usage.md) | Every control, plus naming, commissioning, self-healing, backups |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | What went wrong on a real fleet and how each was diagnosed — including what did *not* work |
 | [docs/api.md](docs/api.md) | HTTP API |
-| [docs/streaming.md](docs/streaming.md) | Unbuilt idea: replacing the source PCs with software streaming |
+| [docs/streaming.md](docs/streaming.md) | Replacing the source PCs with software streaming — the receivers are **confirmed** to accept an ffmpeg stream |
 
 ## The protocol, in brief
 

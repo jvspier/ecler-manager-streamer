@@ -38,10 +38,9 @@ here**, so a ThinkCentre Tiny — three ports and all — is a perfectly good ho
 
 ### The bottlenecks, honestly ranked
 
-1. **Feasibility, not performance.** Will a VEO-XRI1C lock onto an
-   ffmpeg-generated MPEG-TS stream? Unresolved. Everything below is moot until
-   it is answered, and it is cheap to answer: one stream, one spare receiver,
-   one unused Group ID.
+1. ~~**Feasibility, not performance.** Will a VEO-XRI1C lock onto an
+   ffmpeg-generated MPEG-TS stream?~~ **Answered on 2026-09-10: yes**, first
+   attempt, raw MPEG-TS. See above.
 
 2. **Screen capture — the real cost, not the encoding.** `x11grab` copies the
    entire framebuffer every frame: 1920x1080x4 bytes is about 8 MB, so roughly
@@ -236,7 +235,46 @@ Ecler's manual says a transmitter's output is receivable in VLC as
 `udp://@239.255.42.42:5004`, i.e. MPEG-TS over UDP multicast — which ffmpeg
 produces natively.
 
-### The unknowns, worst first
+### CONFIRMED: a receiver does lock onto a software stream
+
+Tested 2026-09-10 against a live VEO-XRI1C. It locked on the **first attempt**,
+with raw MPEG-TS over UDP — none of the fallback variants (RTP, baseline
+profile, a silent audio track, a lower bitrate) were needed. The test pattern
+appeared with its counter running.
+
+**So the feasibility gate is passed**, and the unknowns below are answered:
+raw MPEG-TS is accepted, no audio track is required, and `main` profile is
+fine.
+
+The configuration that worked, exactly:
+
+```
+ffmpeg -re
+  -f lavfi -i testsrc=size=1920x1080:rate=5
+  -c:v libx264 -profile:v main -level 4.0 -pix_fmt yuv420p
+  -preset veryfast -b:v 6M -maxrate 6M -bufsize 6M
+  -g 45 -keyint_min 45 -sc_threshold 0 -r 30 -an
+  -f mpegts -muxrate 0
+  'udp://239.255.42.47:5004?ttl=4&pkt_size=1316&overrun_nonfatal=1&localaddr=<tv-vlan-address>'
+```
+
+Four details in there are load-bearing:
+
+- **`pkt_size=1316`** (7 x 188). MPEG-TS packets are 188 bytes and ffmpeg's
+  default 1472-byte payload is not a multiple of that.
+- **`localaddr`** pinned to the TV-VLAN leg. Without it the packets leave by the
+  default route and the receiver shows "Waiting for connection" with no error
+  anywhere.
+- **`-g 45` with `-r 30`**, i.e. a keyframe every 1.5s. This *is* the
+  channel-switch latency: a receiver can only start decoding at a keyframe.
+- **`yuv420p`** 8-bit. Anything else is a gamble on a decoder this simple.
+
+**What is still unproven:** a real page rendered headlessly rather than a test
+pattern (the same pipeline with a different source, so likely straightforward);
+stability over days rather than minutes; four concurrent streams; and the CPU
+cost on the intended hardware.
+
+### The unknowns, as they stood before the test
 
 1. Whether the receiver needs RTP encapsulation or accepts raw MPEG-TS. The
    manual mentions both and is ambiguous.
