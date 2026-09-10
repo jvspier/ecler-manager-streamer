@@ -118,6 +118,9 @@
   .card.busy::after {
     content: ""; position: absolute; inset: 0; border-radius: var(--radius);
     background: color-mix(in srgb, var(--bg) 55%, transparent);
+    /* Purely a visual cue. It must never swallow clicks: a stuck busy flag
+       would otherwise make the card unusable until a page reload. */
+    pointer-events: none;
   }
   .card-head { display: flex; align-items: baseline; gap: 7px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
@@ -422,11 +425,10 @@ async function load() {
   try {
     const fresh = await api("/api/state");
     state.data = fresh;
-    // Re-rendering mid-edit would discard whatever is half-typed.
-    if (state.renaming || state.advanced || state.setup) {
-      renderStats();
-      return;
-    }
+    // Always render: skipping it used to leave a stale "busy" overlay on a
+    // card whose action had already finished.  Typed values survive because
+    // they are captured into state.draft first.
+    captureDrafts();
     render();
   } catch (err) {
     if (err.message !== "login required") {
@@ -633,7 +635,7 @@ function advancedPanel(device) {
       <h4>Any channel (0-63)</h4>
       <div class="field">
         <input id="ch-${device.id}" type="number" min="0" max="63" step="1"
-               value="${device.group_id ?? ""}" placeholder="Group ID"
+               value="${esc(draftOr("ch-" + device.id, device.group_id))}" placeholder="Group ID"
                aria-label="Channel">
         <button data-act="set-any-channel" data-id="${device.id}">Switch</button>
       </div>
@@ -643,19 +645,19 @@ function advancedPanel(device) {
 
       <h4>Stored in the device</h4>
       <div class="field">
-        <input id="dn-${device.id}" value="${esc(device.device_name || "")}"
+        <input id="dn-${device.id}" value="${esc(draftOr("dn-" + device.id, device.device_name))}"
                maxlength="32" placeholder="Its own name, no spaces"
                aria-label="Device name">
         <button data-act="set-device-name" data-id="${device.id}">Set name</button>
       </div>
       <div class="field">
-        <input id="ip-${device.id}" value="${esc(device.ip)}"
+        <input id="ip-${device.id}" value="${esc(draftOr("ip-" + device.id, device.ip))}"
                placeholder="IP address" aria-label="IP address">
-        <input id="nm-${device.id}" value="${guessMask}"
+        <input id="nm-${device.id}" value="${esc(draftOr("nm-" + device.id, guessMask))}"
                placeholder="Netmask" aria-label="Netmask">
       </div>
       <div class="field">
-        <input id="gw-${device.id}" value="${guessGw}"
+        <input id="gw-${device.id}" value="${esc(draftOr("gw-" + device.id, guessGw))}"
                placeholder="Gateway" aria-label="Gateway">
         <button data-act="set-address" data-id="${device.id}">Change IP</button>
       </div>
@@ -770,11 +772,11 @@ function foundCard(device) {
 
 function renameEditor(device) {
   return `<div class="rename">
-     <input id="name-${device.id}" value="${esc(device.name)}" maxlength="64"
+     <input id="name-${device.id}" value="${esc(draftOr("name-" + device.id, device.name))}" maxlength="64"
             placeholder="Name, e.g. Canteen" aria-label="Name">
-     <input id="loc-${device.id}" value="${esc(device.location || "")}" maxlength="64"
+     <input id="loc-${device.id}" value="${esc(draftOr("loc-" + device.id, device.location))}" maxlength="64"
             placeholder="Location (optional)" aria-label="Location">
-     <input id="note-${device.id}" value="${esc(device.note || "")}" maxlength="64"
+     <input id="note-${device.id}" value="${esc(draftOr("note-" + device.id, device.note))}" maxlength="64"
             placeholder="Note, e.g. on Reception by request" aria-label="Note">
      <div class="row2">
        <button data-act="rename-save" data-id="${device.id}">Save</button>
@@ -1000,7 +1002,13 @@ async function loadRaw(id) {
 async function withPending(id, fn) {
   state.pending.add(id);
   render();
-  try { return await fn(); } finally { state.pending.delete(id); }
+  try {
+    return await fn();
+  } finally {
+    state.pending.delete(id);
+    captureDrafts();
+    render();               // otherwise the busy overlay lingers
+  }
 }
 
 async function act(id, path, describe) {
@@ -1129,7 +1137,9 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (action === "advanced") {
-    state.advanced = state.advanced === id ? null : id;
+    const closing = state.advanced === id;
+    state.advanced = closing ? null : id;
+    if (closing) clearDrafts([`ch-${id}`, `dn-${id}`, `ip-${id}`, `nm-${id}`, `gw-${id}`]);
     render();
     return;
   }
@@ -1206,6 +1216,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (action === "rename-cancel") {
+    clearDrafts([`name-${id}`, `loc-${id}`, `note-${id}`]);
     state.renaming = null;
     render();
     return;
@@ -1220,6 +1231,7 @@ document.addEventListener("click", async (event) => {
         method: "POST",
         body: JSON.stringify({ name, location, note }),
       });
+      clearDrafts([`name-${id}`, `loc-${id}`, `note-${id}`]);
       state.renaming = null;
       toast(`Renamed to ${name.trim()}`, "ok");
       await load();
