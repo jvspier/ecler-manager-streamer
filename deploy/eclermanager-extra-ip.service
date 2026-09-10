@@ -1,0 +1,26 @@
+[Unit]
+# Extra addresses on the TV VLAN leg, for reaching VEO devices that sit on a
+# different subnet.
+#
+# Why this exists: 10.0.2.32 will not store an address change -- not through
+# set_static_ip, not through its web UI, not across a reboot -- so it lives
+# permanently at the factory default 192.168.1.12. It answers the control
+# protocol perfectly there, so rather than replace a working receiver, the
+# manager keeps a foot in that subnet and polls it where it is.
+#
+# Edit ExecStart/ExecStop below if the address or interface differs. Multiple
+# addresses: add more ExecStart lines.
+Description=Extra IP addresses for reaching off-subnet VEO devices
+After=network-online.target
+Wants=network-online.target
+Before=eclermanager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# "replace" rather than "add", so a restart is not an error.
+ExecStart=/sbin/ip addr replace 192.168.1.240/24 dev eth1
+ExecStop=-/sbin/ip addr del 192.168.1.240/24 dev eth1
+
+[Install]
+WantedBy=multi-user.target

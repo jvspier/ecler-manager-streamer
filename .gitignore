@@ -1,0 +1,15 @@
+# Your fleet's data. Never committed: it contains addresses, names and
+# locations specific to one installation.
+config.json
+config.*.json
+!config.example.json
+devices.txt
+events.jsonl
+*.bak
+
+# Site-specific notes, kept locally alongside the generic README.
+SITE-NOTES.md
+
+# Python
+__pycache__/
+*.py[cod]

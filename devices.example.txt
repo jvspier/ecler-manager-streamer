@@ -1,0 +1,33 @@
+# Fleet inventory.  Format: "<ip> <name>" per line.
+# Blank lines and anything after a # are ignored.
+#
+# Copy to devices.txt and fill in your own devices.  tools/scan.py --names
+# reads it, and the names become the dashboard labels and receiver ids, so
+# this is where you record WHERE EACH TV IS -- "Canteen" tells you something
+# when a card goes amber; "rx-07" does not.
+#
+# You do not need a ladder to work out which receiver is which screen: start
+# the dashboard, click "identify" on a card, and that TV drops to no-signal
+# for a few seconds.  Walk the building once, filling in names as screens
+# blink, then re-run the scan to regenerate config.json.
+
+# --- transmitters (encoders), one per channel -----------------------
+10.0.1.1       tx-ch1-reception
+10.0.1.2       tx-ch2-workshop
+10.0.1.3       tx-ch3-canteen
+
+# --- receivers (decoders), one per TV -------------------------------
+# Grouping these by channel makes the naming walk easier: TVs on the same
+# channel are usually in the same area.
+10.0.2.1       Reception desk
+10.0.2.2       Reception waiting area
+10.0.2.10      Workshop north      # location as a trailing comment is fine
+10.0.2.11      Workshop south
+10.0.2.20      Canteen
+
+# --- spares, not in service -----------------------------------------
+# Listed so the addresses stay documented.  Mark them "enabled": false in
+# config.json and the dashboard files them under Spares / In storage rather
+# than showing them as permanently offline.
+10.0.2.90      spare-01
+10.0.2.91      spare-02

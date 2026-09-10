@@ -1,0 +1,1448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ecler VEO Manager</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
+    --text: #e6e9ef; --muted: #99a1b3;
+    --accent: #4c8dff; --ok: #35c07f; --warn: #e8b339; --bad: #ef5d5d;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f4f6fa; --panel:#fff; --panel-2:#f0f2f7; --line:#dde1ea;
+            --text:#161a22; --muted:#5d6577; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  header.top {
+    position: sticky; top: 0; z-index: 20; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: 11px 18px;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  }
+  h1 { font-size: 15.5px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  h1 small { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 11.5px; }
+  .stats { display: flex; gap: 6px; flex-wrap: wrap; }
+  .stat {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 10px; font-size: 11.5px; color: var(--muted); white-space: nowrap;
+  }
+  .stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .stat.alert { border-color: var(--warn); color: var(--warn); }
+  .stat.alert b { color: var(--warn); }
+  .stat.bad { border-color: var(--bad); color: var(--bad); }
+  .stat.bad b { color: var(--bad); }
+  .spacer { flex: 1 1 auto; }
+  header.top a {
+    font-size: 12px; color: var(--muted); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px;
+  }
+  header.top a:hover { border-color: var(--accent); color: var(--accent); }
+  label.ctl { font-size: 11.5px; color: var(--muted); }
+  header.top select {
+    font: inherit; font-size: 12px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 4px 7px;
+  }
+
+  button {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px;
+    cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.warn { border-color: var(--warn); color: var(--warn); }
+
+  main { padding: 16px 18px 40px; }
+
+  /* --- one section per transmitter ------------------------------------ */
+  section.group { margin-bottom: 26px; }
+  button.group-head {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    margin: 0 0 10px; padding: 0 0 8px; text-align: left;
+    background: none; border: none; border-bottom: 1px solid var(--line);
+    border-radius: 0; cursor: pointer;
+  }
+  button.group-head:hover { border-color: var(--accent); }
+  button.group-head:hover .group-name { color: var(--accent); }
+  .caret {
+    font-size: 10px; color: var(--muted); width: 10px; flex: 0 0 auto;
+    transition: transform .12s;
+  }
+  .group.open .caret { transform: rotate(90deg); }
+  /* One dot per TV, so a collapsed group still shows its health. */
+  .dotstrip { display: flex; gap: 3px; flex-wrap: wrap; margin-left: 4px; }
+  .dotstrip i {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
+    display: block;
+  }
+  .dotstrip i.warn { background: var(--warn); }
+  .dotstrip i.bad { background: var(--bad); }
+  .group-num {
+    font: 620 15px/1 var(--mono); font-variant-numeric: tabular-nums;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 10px; color: var(--muted);
+  }
+  .group.has-issue .group-num { border-color: var(--warn); color: var(--warn); }
+  .group-name { font-size: 14.5px; font-weight: 620; }
+  .group-sub { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
+  .grid {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  }
+
+  /* --- one card per TV ------------------------------------------------- */
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 11px 12px; position: relative;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card.drift { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn) inset; }
+  .card.held { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .held-banner {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border: 1px solid var(--accent); border-radius: 8px; padding: 7px 9px;
+    font-size: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .held-banner b { white-space: nowrap; }
+  .card.offline { border-color: var(--bad); opacity: .8; }
+  .card.busy::after {
+    content: ""; position: absolute; inset: 0; border-radius: var(--radius);
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+  }
+  .card-head { display: flex; align-items: baseline; gap: 7px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--bad); }
+  .dot.unknown { background: var(--warn); }
+  .title { font-weight: 600; font-size: 13.5px; }
+  .sub { color: var(--muted); font-size: 11px; font-family: var(--mono); }
+
+  /* Shown only when something is wrong: what the TV is actually on. */
+  .now {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px;
+  }
+  .chan-num {
+    font: 620 19px/1 var(--mono); font-variant-numeric: tabular-nums;
+    min-width: 1.8em; text-align: center;
+  }
+  .chan-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .chan-name { font-weight: 550; font-size: 12.5px; }
+
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip {
+    font-size: 10.5px; padding: 1px 6px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+  .chip.ok { border-color: var(--ok); color: var(--ok); }
+  .chip.warn { border-color: var(--warn); color: var(--warn); }
+  .chip.bad { border-color: var(--bad); color: var(--bad); }
+
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .buttons button {
+    text-align: left; padding: 5px 8px; font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .buttons button.current {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .buttons button.expected::before { content: "\2605 "; color: var(--warn); }
+
+  .foot {
+    display: flex; flex-direction: column; gap: 6px;
+    border-top: 1px solid var(--line); padding-top: 7px;
+  }
+  .foot-row { display: flex; align-items: center; gap: 7px; }
+  /* Links share the width evenly, so they never strand one on its own line. */
+  .foot-links { display: flex; gap: 9px; flex-wrap: wrap; }
+  .foot label { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+  .foot select { flex: 1 1 auto; min-width: 0; }
+  select {
+    font: inherit; font-size: 11.5px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px;
+    max-width: 100%;
+  }
+  .link {
+    background: none; border: none; color: var(--muted); text-decoration: underline;
+    padding: 1px 0; font-size: 11px; cursor: pointer;
+  }
+  .link:hover:not(:disabled) { color: var(--accent); }
+  .advanced {
+    display: flex; flex-direction: column; gap: 6px;
+    border-top: 1px solid var(--line); padding-top: 7px;
+  }
+  .advanced h4 {
+    margin: 0; font-size: 11px; color: var(--muted); font-weight: 550;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .advanced .field { display: flex; gap: 5px; align-items: center; }
+  .advanced input {
+    font: inherit; font-size: 12px; flex: 1 1 auto; min-width: 0;
+    color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px;
+  }
+  .advanced input:focus { outline: none; border-color: var(--accent); }
+  .advanced button { font-size: 11.5px; padding: 4px 9px; white-space: nowrap; }
+  .advanced .warn-note { font-size: 11px; color: var(--warn); }
+  .rename { display: flex; flex-direction: column; gap: 5px; }
+  .rename input {
+    font: inherit; font-size: 12.5px; width: 100%; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--accent);
+    border-radius: 6px; padding: 4px 7px;
+  }
+  .rename input:focus { outline: none; }
+  .rename .row2 { display: flex; gap: 5px; }
+  .rename button { font-size: 11.5px; padding: 3px 9px; }
+  .note { font-size: 11px; color: var(--muted); }
+  .note.err { color: var(--bad); font-family: var(--mono); word-break: break-all; }
+  pre.raw {
+    margin: 0; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 10.5px;
+    max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  }
+
+  section.log { margin-top: 30px; }
+  button.log-head {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    background: none; border: none; border-bottom: 1px solid var(--line);
+    border-radius: 0; padding: 0 0 7px; margin: 0 0 8px; cursor: pointer;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px;
+    color: var(--muted);
+  }
+  button.log-head:hover { color: var(--accent); border-color: var(--accent); }
+  section.log.open .caret { transform: rotate(90deg); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 9px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  td.ts { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+  td.kind { white-space: nowrap; }
+  .k-drift, .k-signal_lost, .k-auto_nudge, .k-config { color: var(--warn); }
+  .k-renamed, .k-added, .k-discovered, .k-imported,
+  .k-enabled, .k-disabled, .k-device_name, .k-address { color: var(--accent); }
+  .k-device_name_failed, .k-address_failed, .k-setup_failed { color: var(--bad); }
+  .k-setup { color: var(--ok); }
+  .dotstrip i.held { background: var(--accent); }
+  .k-offline, .k-switch_failed, .k-reacquire_failed, .k-identify_failed { color: var(--bad); }
+  .k-switch, .k-online, .k-signal_restored, .k-auto_repair,
+  .k-reacquire, .k-identify { color: var(--ok); }
+
+  #toasts {
+    position: fixed; right: 16px; bottom: 16px; display: flex;
+    flex-direction: column; gap: 8px; z-index: 50; max-width: 380px;
+  }
+  .toast {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 8px;
+    padding: 8px 12px; font-size: 12.5px; box-shadow: 0 6px 22px #0006;
+  }
+  .toast.ok { border-left-color: var(--ok); }
+  .toast.bad { border-left-color: var(--bad); }
+  .empty { color: var(--muted); padding: 28px; text-align: center; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Ecler VEO Manager<small id="clock"></small></h1>
+  <div class="stats" id="stats"></div>
+  <div class="spacer"></div>
+  <label class="ctl" for="sort">Sort</label>
+  <select id="sort" title="Order the cards within each group">
+    <option value="name">by name</option>
+    <option value="ip">by IP address</option>
+  </select>
+  <a id="export" href="/api/inventory" download="devices.txt"
+     title="Download the current names as a devices.txt, so your naming work has a second copy">Export names</a>
+  <a id="export-config" href="/api/config" download
+     title="Download the complete config: names, IPs, channels, expected channels and settings">Backup</a>
+  <button id="import-config"
+     title="Restore a complete config from a Backup file. The current one is kept as a timestamped backup.">Restore…</button>
+  <input id="import-file" type="file" accept=".json,application/json" hidden>
+  <button id="setup" title="Set up a factory-default device and add it to the fleet">Set up new device</button>
+  <button id="scan" title="Look for VEO devices on the network that are not in the config">Scan network</button>
+  <button id="expand-all" title="Expand every group">Expand all</button>
+  <button id="collapse-all" title="Collapse every group">Collapse all</button>
+  <button id="release-all" hidden>Restore held screens</button>
+  <button id="repair" class="warn" disabled>Repair drifted</button>
+  <button id="refresh">Refresh now</button>
+  <form id="signout" method="post" action="/logout" hidden style="margin:0">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+
+<main>
+  <section class="group has-issue open" id="setup-panel" hidden>
+    <div class="group-head" style="cursor:default">
+      <span class="group-num">+</span>
+      <span style="min-width:0">
+        <span class="group-name" style="display:block">Set up a new device</span>
+        <span class="group-sub" style="display:block" id="setup-sub"></span>
+      </span>
+      <span class="spacer"></span>
+      <button data-act="setup-close">Close</button>
+    </div>
+    <div id="setup-body"></div>
+  </section>
+  <section class="group has-issue open" id="found" hidden>
+    <div class="group-head" style="cursor:default">
+      <span class="group-num">?</span>
+      <span style="min-width:0">
+        <span class="group-name" style="display:block">Found on the network, not in the config</span>
+        <span class="group-sub" style="display:block" id="found-sub"></span>
+      </span>
+      <span class="spacer"></span>
+      <button id="add-all">Add all</button>
+    </div>
+    <div class="grid" id="found-grid"></div>
+  </section>
+  <div id="groups"><div class="empty">Loading…</div></div>
+  <section class="group" id="disabled" hidden>
+    <button class="group-head" data-act="toggle-disabled" aria-expanded="false">
+      <span class="caret">&#9656;</span>
+      <span class="group-num">—</span>
+      <span style="min-width:0">
+        <span class="group-name" style="display:block">Spares / In storage</span>
+        <span class="group-sub" style="display:block" id="disabled-sub"></span>
+      </span>
+    </button>
+    <div class="grid" id="disabled-grid" hidden></div>
+  </section>
+  <section class="log" id="log">
+    <button class="log-head" data-act="toggle-log" aria-expanded="false">
+      <span class="caret">&#9656;</span><span id="log-title">Recent events</span>
+    </button>
+    <table id="log-table" hidden>
+      <thead><tr>
+        <th style="width:88px">Time</th><th style="width:128px">Event</th>
+        <th style="width:150px">Receiver</th><th>Detail</th>
+      </tr></thead>
+      <tbody id="events"></tbody>
+    </table>
+  </section>
+</main>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+
+const state = {
+  data: null,
+  openRaw: new Set(),
+  pending: new Set(),
+  // Explicit expand/collapse choices, per group key. Groups the user has not
+  // touched fall back to the automatic rule: open only if something is wrong.
+  groupOverride: {},
+  logOpen: false,
+  disabledOpen: false,
+  renaming: null,          // receiver id whose labels are being edited
+  advanced: null,          // receiver id whose device settings are showing
+  setup: null,             // what is sitting on the factory-default address
+  sort: "name",
+};
+
+const STORE_KEY = "ecler.view";
+
+function loadView() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+    if (saved && typeof saved === "object") {
+      state.groupOverride = saved.groups && typeof saved.groups === "object"
+        ? saved.groups : {};
+      state.logOpen = Boolean(saved.logOpen);
+      if (saved.sort === "ip" || saved.sort === "name") state.sort = saved.sort;
+    }
+  } catch { /* private window, cleared storage, or storage blocked */ }
+}
+
+function saveView() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      groups: state.groupOverride,
+      logOpen: state.logOpen,
+      sort: state.sort,
+    }));
+  } catch { /* not important enough to bother the user about */ }
+}
+
+const fmtTime = (ts) =>
+  ts ? new Date(ts * 1000).toLocaleTimeString([], { hour12: false }) : "–";
+
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function toast(message, kind = "") {
+  const el = document.createElement("div");
+  el.className = "toast " + kind;
+  el.textContent = message;
+  document.getElementById("toasts").append(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (response.status === 401) {
+    location.href = "/login";           // session expired while open
+    throw new Error("login required");
+  }
+  let payload = {};
+  try { payload = await response.json(); } catch { /* no body */ }
+  if (!response.ok) {
+    throw new Error(payload.error || payload.message || response.statusText);
+  }
+  return payload;
+}
+
+async function showAccount() {
+  try {
+    const who = await api("/api/whoami");
+    if (who.auth && who.user) {
+      const form = document.getElementById("signout");
+      form.hidden = false;
+      form.querySelector("button").textContent = `Sign out (${who.user})`;
+    }
+  } catch { /* signed out, or auth disabled */ }
+}
+
+async function load() {
+  try {
+    const fresh = await api("/api/state");
+    state.data = fresh;
+    // Re-rendering mid-edit would discard whatever is half-typed.
+    if (state.renaming || state.advanced || state.setup) {
+      renderStats();
+      return;
+    }
+    render();
+  } catch (err) {
+    if (err.message !== "login required") {
+      toast("Cannot reach the manager: " + err.message, "bad");
+    }
+  }
+}
+
+function renderStats() {
+  const { summary, poll } = state.data;
+  const items = [
+    ["TVs", summary.total, ""],
+    ["online", summary.online, summary.online < summary.total ? "bad" : ""],
+    ["wrong channel", summary.drifted, summary.drifted ? "alert" : ""],
+    ["no signal", summary.no_signal, summary.no_signal ? "alert" : ""],
+  ];
+  if (summary.held) items.push(["held dark", summary.held, "alert"]);
+  if (summary.dhcp) items.push(["on DHCP", summary.dhcp, "alert"]);
+  if (poll.auto_repair) items.push(["auto-repair", "on", ""]);
+  if (poll.auto_nudge_on_signal_loss) items.push(["auto-nudge", "on", ""]);
+  document.getElementById("stats").innerHTML = items
+    .map(([label, value, cls]) => `<span class="stat ${cls}"><b>${value}</b> ${label}</span>`)
+    .join("");
+  document.getElementById("clock").textContent =
+    `polled ${fmtTime(poll.last_finished)} · every ${poll.interval_seconds}s`;
+  document.getElementById("repair").disabled = summary.drifted === 0;
+  const releaseAll = document.getElementById("release-all");
+  releaseAll.hidden = !summary.held;
+  releaseAll.textContent = `Restore ${summary.held} held screen${summary.held === 1 ? "" : "s"}`;
+
+  const scanButton = document.getElementById("scan");
+  const scanning = state.data.discovery?.running;
+  scanButton.disabled = Boolean(scanning);
+  scanButton.textContent = scanning
+    ? `Scanning… ${state.data.discovery.message || ""}`.trim()
+    : "Scan network";
+  scanButton.title = scanning
+    ? "A scan is running in the background"
+    : `Look for VEO devices not in the config${state.data.discovery?.last
+        ? " · last scan " + fmtTime(state.data.discovery.last) : ""}`;
+}
+
+function channelButtons(device) {
+  return (state.data.channels || []).map((channel) => {
+    const cls = [];
+    if (channel.group_id === device.group_id) cls.push("current");
+    if (channel.group_id === device.expected_group_id) cls.push("expected");
+    const title = `Switch to ${channel.group_id} · ${channel.name}` +
+                  (channel.note ? ` (${channel.note})` : "");
+    return `<button class="${cls.join(" ")}" data-act="channel" data-id="${device.id}"` +
+           ` data-group="${channel.group_id}" title="${esc(title)}">` +
+           `${channel.group_id} · ${esc(channel.name)}</button>`;
+  }).join("");
+}
+
+function deviceCard(device) {
+  const card = document.createElement("div");
+  const classes = ["card"];
+  if (!device.online) classes.push("offline");
+  else if (device.held) classes.push("held");
+  else if (device.drifted) classes.push("drift");
+  if (device.busy || state.pending.has(device.id)) classes.push("busy");
+  card.className = classes.join(" ");
+
+  const settled = device.online && !device.drifted;
+  const dotClass = !device.online ? "off"
+                 : device.video_lock === false ? "unknown" : "on";
+
+  const chips = [];
+  if (!device.online) {
+    chips.push(`<span class="chip bad">offline</span>`);
+  } else {
+    if (device.video_lock === true) chips.push(`<span class="chip ok">signal</span>`);
+    else if (device.video_lock === false) chips.push(`<span class="chip warn">no signal</span>`);
+    else chips.push(`<span class="chip">signal unknown</span>`);
+    if (device.dhcp === true) {
+      chips.push(`<span class="chip warn" title="On DHCP. With no DHCP server on this VLAN it will fall back to the factory-default address on its next reboot, and drop out of the manager.">DHCP</span>`);
+    }
+    if (device.latency_ms) chips.push(`<span class="chip">${device.latency_ms} ms</span>`);
+  }
+
+  // The channel block only appears when the TV is NOT where it belongs --
+  // otherwise the group heading already says what it is showing.
+  let statusBlock;
+  if (settled) {
+    statusBlock = `<div class="chips">${chips.join("")}</div>`;
+  } else {
+    const shownName = device.channel_name
+      || (device.online ? "unknown channel" : "no data");
+    const expected = device.drifted
+      ? `<span class="chip warn">should be ${device.expected_group_id} · ` +
+        `${esc(device.expected_channel_name || "?")}</span>`
+      : "";
+    statusBlock = `<div class="now">
+        <span class="chan-num">${device.group_id ?? "--"}</span>
+        <div class="chan-meta">
+          <span class="chan-name">${esc(shownName)}</span>
+          <div class="chips">${chips.join("")}${expected}</div>
+        </div>
+      </div>`;
+  }
+
+  const options = [`<option value="">– none –</option>`]
+    .concat((state.data.channels || []).map((channel) =>
+      `<option value="${channel.group_id}"` +
+      `${channel.group_id === device.expected_group_id ? " selected" : ""}>` +
+      `${channel.group_id} · ${esc(channel.name)}</option>`))
+    .join("");
+  const offline = device.online ? "" : " disabled";
+
+  const head = state.renaming === device.id
+    ? renameEditor(device)
+    : `<div class="card-head">
+         <span class="dot ${dotClass}"></span>
+         <div style="min-width:0">
+           <span class="title">${esc(device.name)}</span>
+           <div class="sub">${esc(device.ip)}${device.location ? " · " + esc(device.location) : ""}${device.mac_address ? "<br>" + esc(device.mac_address) : ""}</div>
+         </div>
+       </div>`;
+
+  card.innerHTML = `
+    ${head}
+    ${device.held ? `<div class="held-banner">
+        <b>Screen held dark</b>
+        <span class="spacer"></span>
+        <button data-act="release" data-id="${device.id}">Restore channel ${device.held_from_group_id}</button>
+      </div>` : ""}
+    ${statusBlock}
+    <div class="buttons">${channelButtons(device)}</div>
+    ${device.note ? `<div class="note">${esc(device.note)}</div>` : ""}
+    ${device.error ? `<div class="note err">${esc(device.error)}</div>` : ""}
+    ${device.last_action ? `<div class="note">${esc(device.last_action)} · ${fmtTime(device.last_action_at)}</div>` : ""}
+    <div class="foot">
+      <div class="foot-row">
+        <label>Should be</label>
+        <select data-act="expected" data-id="${device.id}">${options}</select>
+      </div>
+      <div class="foot-links">
+        <button class="link" data-act="identify" data-id="${device.id}"${offline}
+          title="Blink this TV: it drops to no-signal for a few seconds, then returns">identify</button>
+        <button class="link" data-act="hold" data-id="${device.id}"${offline || device.held ? " disabled" : ""}
+          title="Hold this screen dark until you release it, so you can walk the building and find it">hold dark</button>
+        <button class="link" data-act="rename" data-id="${device.id}"
+          title="Rename this receiver and set its location">rename</button>
+        <button class="link" data-act="bounce" data-id="${device.id}"${offline}
+          title="Force it to re-join its stream, like unplugging it">re-acquire</button>
+        <button class="link" data-act="raw" data-id="${device.id}"
+          title="The exact bytes this device replied with on the last poll">${state.openRaw.has(device.id) ? "hide raw" : "raw"}</button>
+        <button class="link" data-act="advanced" data-id="${device.id}"${offline}
+          title="Change the address or the name stored in the device itself">${state.advanced === device.id ? "hide device settings" : "device settings"}</button>
+        <button class="link" data-act="disable" data-id="${device.id}"
+          title="Move to Spares / In storage: stop polling it, and stop counting it as a fault">set aside</button>
+        <button class="link" data-act="reboot" data-id="${device.id}"${offline}
+          title="Full reboot: about a minute of black screen">reboot</button>
+      </div>
+    </div>
+    ${state.advanced === device.id ? advancedPanel(device) : ""}
+    ${state.openRaw.has(device.id) ? `<pre class="raw" id="raw-${device.id}">loading…</pre>` : ""}
+  `;
+  return card;
+}
+
+function compareName(a, b) {
+  // numeric: true so "rx-2" sorts before "rx-10"
+  return String(a.name).localeCompare(String(b.name), undefined,
+                                      { numeric: true, sensitivity: "base" });
+}
+
+function compareIp(a, b) {
+  const octets = (value) => String(value).split(".").map((n) => Number(n));
+  const left = octets(a.ip);
+  const right = octets(b.ip);
+  if (left.length !== 4 || right.length !== 4
+      || left.some(Number.isNaN) || right.some(Number.isNaN)) {
+    return String(a.ip).localeCompare(String(b.ip));   // hostname, not an IPv4
+  }
+  for (let i = 0; i < 4; i += 1) {
+    if (left[i] !== right[i]) return left[i] - right[i];
+  }
+  return 0;
+}
+
+function sortDevices(devices) {
+  return [...devices].sort(state.sort === "ip" ? compareIp : compareName);
+}
+
+function deviceHealth(device) {
+  if (device.held) return "held";
+  if (!device.online) return "bad";
+  if (device.drifted || device.video_lock === false) return "warn";
+  return "ok";
+}
+
+function advancedPanel(device) {
+  // Settings stored in the device, as opposed to the dashboard's own labels.
+  const parts = String(device.ip).split(".");
+  const guessMask = parts.length === 4 ? "255.255.0.0" : "";
+  const guessGw = parts.length === 4 ? `${parts[0]}.${parts[1]}.0.1` : "";
+  return `<div class="advanced">
+      <h4>Stored in the device</h4>
+      <div class="field">
+        <input id="dn-${device.id}" value="${esc(device.device_name || "")}"
+               maxlength="32" placeholder="Its own name, no spaces"
+               aria-label="Device name">
+        <button data-act="set-device-name" data-id="${device.id}">Set name</button>
+      </div>
+      <div class="field">
+        <input id="ip-${device.id}" value="${esc(device.ip)}"
+               placeholder="IP address" aria-label="IP address">
+        <input id="nm-${device.id}" value="${guessMask}"
+               placeholder="Netmask" aria-label="Netmask">
+      </div>
+      <div class="field">
+        <input id="gw-${device.id}" value="${guessGw}"
+               placeholder="Gateway" aria-label="Gateway">
+        <button data-act="set-address" data-id="${device.id}">Change IP</button>
+      </div>
+      <div class="warn-note">Changing the IP reboots the device — about a
+        minute of black screen. The config follows it automatically once it
+        answers at the new address.</div>
+    </div>`;
+}
+
+function groupSection({ key, groupId, name, note, transmitter, multicast,
+                       devices: unsorted }) {
+  const devices = sortDevices(unsorted);
+  // How many receivers are actually on this channel right now, wherever they
+  // are assigned.  Differs from devices.length whenever something has drifted.
+  const onItNow = groupId === null ? null
+    : state.data.devices.filter((d) => d.group_id === groupId).length;
+  const offline = devices.filter((d) => !d.online).length;
+  const drifted = devices.filter((d) => d.drifted).length;
+  const noSignal = devices.filter((d) => d.online && d.video_lock === false).length;
+  const hasIssue = Boolean(drifted || noSignal || offline);
+  const expanded = unsorted.length === 0
+    ? false                           // nothing to expand
+    : key in state.groupOverride
+      ? state.groupOverride[key]
+      : hasIssue;                     // clean first look: trouble opens itself
+
+  const section = document.createElement("section");
+  section.className = "group" + (hasIssue || !devices.length ? " has-issue" : "")
+                    + (expanded ? " open" : "");
+
+  const chips = [];
+  if (!devices.length) {
+    chips.push(`<span class="chip warn">no TVs assigned</span>`);
+  } else {
+    if (drifted) chips.push(`<span class="chip warn">${drifted} wrong channel</span>`);
+    if (noSignal) chips.push(`<span class="chip warn">${noSignal} no signal</span>`);
+    if (offline) chips.push(`<span class="chip bad">${offline} offline</span>`);
+    if (!chips.length) chips.push(`<span class="chip ok">all good</span>`);
+  }
+
+  const strip = (expanded || !devices.length) ? "" :
+    `<span class="dotstrip">` + devices.map((d) =>
+      `<i class="${deviceHealth(d)}" title="${esc(d.name)}"></i>`).join("") + `</span>`;
+
+  const head = document.createElement("button");
+  head.className = "group-head";
+  head.dataset.act = "toggle-group";
+  head.dataset.group = key;
+  head.setAttribute("aria-expanded", String(expanded));
+  head.innerHTML = `
+    <span class="caret"${devices.length ? "" : ' style="visibility:hidden"'}>&#9656;</span>
+    <span class="group-num">${groupId ?? "–"}</span>
+    <span style="min-width:0">
+      <span class="group-name" style="display:block">${esc(name)}</span>
+      <span class="group-sub" style="display:block">${transmitter ? "from " + esc(transmitter) + " · " : ""}${multicast ? esc(multicast) + " · " : ""}${devices.length} assigned${onItNow !== null && onItNow !== devices.length ? ` · <b>${onItNow} on it now</b>` : ""}${note ? " · " + esc(note) : ""}</span>
+    </span>
+    ${strip}
+    <span class="spacer"></span>
+    <span class="chips">${chips.join("")}</span>`;
+  section.append(head);
+
+  if (!devices.length) {
+    const empty = document.createElement("div");
+    empty.className = "note";
+    empty.style.padding = "2px 0 4px";
+    empty.textContent = transmitter
+      ? `${transmitter} is streaming this channel, but no TV is set to show it.`
+      : "No TV is set to show this channel.";
+    section.append(empty);
+  } else if (expanded) {
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    grid.replaceChildren(...devices.map(deviceCard));
+    section.append(grid);
+  }
+  return section;
+}
+
+function foundCard(device) {
+  const card = document.createElement("div");
+  card.className = "card drift";
+  const chips = [];
+  if (device.video_lock === true) chips.push(`<span class="chip ok">signal</span>`);
+  else if (device.video_lock === false) chips.push(`<span class="chip warn">no signal</span>`);
+  chips.push(`<span class="chip">${esc(device.role)}</span>`);
+  if (device.fw_version) chips.push(`<span class="chip">${esc(device.fw_version)}</span>`);
+
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="dot on"></span>
+      <div style="min-width:0">
+        <span class="title">${esc(device.suggested_name)}</span>
+        <div class="sub">${esc(device.ip)}${device.mac_address ? " · " + esc(device.mac_address) : ""}</div>
+      </div>
+    </div>
+    <div class="now">
+      <span class="chan-num">${device.group_id ?? "--"}</span>
+      <div class="chan-meta">
+        <span class="chan-name">${esc(device.channel_name || "channel not in your config")}</span>
+        <div class="chips">${chips.join("")}</div>
+      </div>
+    </div>
+    <div class="foot">
+      <div class="foot-row">
+        <button data-act="add-found" data-ip="${esc(device.ip)}" style="flex:1 1 auto"
+          title="Add as ${esc(device.suggested_id)}, expecting channel ${device.group_id ?? "none"}">Add to config</button>
+      </div>
+      <div class="note">Will be added as <b>${esc(device.suggested_id)}</b>, expecting channel ${device.group_id ?? "none"}. Rename it afterwards.</div>
+    </div>`;
+  return card;
+}
+
+function renameEditor(device) {
+  return `<div class="rename">
+     <input id="name-${device.id}" value="${esc(device.name)}" maxlength="64"
+            placeholder="Name, e.g. Canteen" aria-label="Name">
+     <input id="loc-${device.id}" value="${esc(device.location || "")}" maxlength="64"
+            placeholder="Location (optional)" aria-label="Location">
+     <input id="note-${device.id}" value="${esc(device.note || "")}" maxlength="64"
+            placeholder="Note, e.g. on Reception by request" aria-label="Note">
+     <div class="row2">
+       <button data-act="rename-save" data-id="${device.id}">Save</button>
+       <button data-act="rename-cancel" data-id="${device.id}">Cancel</button>
+       <span class="spacer"></span>
+       <span class="sub">${esc(device.ip)}</span>
+     </div>
+   </div>`;
+}
+
+function disabledCard(device) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.style.opacity = ".85";
+  card.innerHTML = `
+    ${state.renaming === device.id ? renameEditor(device) : `
+    <div class="card-head">
+      <span class="dot unknown"></span>
+      <div style="min-width:0">
+        <span class="title">${esc(device.name)}</span>
+        <div class="sub">${esc(device.ip)}${device.location ? " · " + esc(device.location) : ""}</div>
+      </div>
+    </div>`}
+    ${device.note ? `<div class="note">${esc(device.note)}</div>` : ""}
+    <div class="foot">
+      <div class="foot-row">
+        <button data-act="enable" data-id="${device.id}" style="flex:1 1 auto"
+          title="Put this receiver back into service and start polling it">Return to service</button>
+      </div>
+      <div class="foot-links">
+        <button class="link" data-act="rename" data-id="${device.id}"
+          title="Edit its name, location and note">rename</button>
+      </div>
+    </div>`;
+  return card;
+}
+
+function renderDisabled() {
+  const section = document.getElementById("disabled");
+  const devices = state.data.disabled || [];
+  section.hidden = devices.length === 0;
+  if (!devices.length) return;
+  section.className = "group" + (state.disabledOpen ? " open" : "");
+  document.getElementById("disabled-sub").textContent =
+    `${devices.length} receiver(s) set aside — not polled, and not counted as `
+    + "faults";
+  section.querySelector("button.group-head")
+    .setAttribute("aria-expanded", String(state.disabledOpen));
+  const grid = document.getElementById("disabled-grid");
+  grid.hidden = !state.disabledOpen;
+  if (state.disabledOpen) grid.replaceChildren(...devices.map(disabledCard));
+}
+
+function renderSetup() {
+  const panel = document.getElementById("setup-panel");
+  const found = state.setup;
+  panel.hidden = !found;
+  if (!found) return;
+
+  const body = document.getElementById("setup-body");
+  if (!found.online) {
+    document.getElementById("setup-sub").textContent =
+      `nothing answering at ${found.address}`;
+    body.innerHTML = `<div class="note" style="padding:4px 0 8px">
+      A factory-reset receiver appears at <b>${esc(found.address)}</b>.
+      Nothing is answering there.
+      ${found.error ? "<br>" + esc(found.error) : ""}
+      <br><br>Check that: the device is powered and on the TV VLAN; it has been
+      factory reset (hold the reset pin ~10s while powered, until the display
+      shows <b>00</b>); and this container has an address in that subnet
+      (<code>ip addr add 192.168.1.240/24 dev eth1</code>).
+    </div>`;
+    return;
+  }
+
+  if (found.already_in_config) {
+    document.getElementById("setup-sub").textContent =
+      `${found.address} is already ${found.already_in_config}`;
+    body.innerHTML = `<div class="note" style="padding:4px 0 8px">
+      A receiver in the config already has the address
+      <b>${esc(found.address)}</b> (<b>${esc(found.already_in_config)}</b>), so
+      there is nothing to set up. Use its <b>device settings</b> to move it.
+    </div>`;
+    return;
+  }
+
+  document.getElementById("setup-sub").textContent =
+    `${found.device_name || "unnamed"} · ${found.mac_address || "?"} · `
+    + `firmware ${found.fw_version || "?"} · currently channel `
+    + `${found.group_id ?? "?"}`;
+
+  const channels = (state.data.channels || []).map((c) =>
+    `<option value="${c.group_id}"${c.group_id === found.group_id ? " selected" : ""}>`
+    + `${c.group_id} · ${esc(c.name)}</option>`).join("");
+
+  body.innerHTML = `<div class="grid" style="grid-template-columns:minmax(280px,420px)">
+    <div class="card">
+      <div class="advanced" style="border-top:none;padding-top:0">
+        <h4>Give it an identity</h4>
+        <div class="field">
+          <input id="su-name" placeholder="Name for the dashboard, e.g. Canteen"
+                 maxlength="64" aria-label="Dashboard name">
+        </div>
+        <div class="field">
+          <input id="su-devname" value="${esc(found.suggested_id.replace(/-/g, "_").toUpperCase())}"
+                 placeholder="Name stored in the device, no spaces"
+                 maxlength="32" aria-label="Device name">
+        </div>
+        <h4>Network</h4>
+        <div class="field">
+          <input id="su-ip" placeholder="IP address, e.g. 10.0.2.40" aria-label="IP address">
+        </div>
+        <div class="field">
+          <input id="su-nm" value="${esc(found.defaults.netmask)}" placeholder="Netmask" aria-label="Netmask">
+          <input id="su-gw" value="${esc(found.defaults.gateway)}" placeholder="Gateway" aria-label="Gateway">
+        </div>
+        <h4>Channel</h4>
+        <div class="field">
+          <select id="su-ch" style="flex:1 1 auto">
+            <option value="">– leave as it is –</option>${channels}
+          </select>
+        </div>
+        <div class="field">
+          <button data-act="setup-go" style="flex:1 1 auto">Set up and add to the fleet</button>
+        </div>
+        <div class="warn-note">The device reboots to apply its new address —
+          about a minute. It is added to the config only once it answers
+          there.</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderFound() {
+  const section = document.getElementById("found");
+  const devices = state.data.discovered || [];
+  section.hidden = devices.length === 0;
+  if (!devices.length) return;
+  document.getElementById("found-sub").textContent =
+    `${devices.length} device(s) answered the VEO protocol but are not in the config`;
+  document.getElementById("found-grid")
+    .replaceChildren(...devices.map(foundCard));
+}
+
+function render() {
+  renderStats();
+  renderSetup();
+  renderFound();
+  renderDisabled();
+
+  // Group by the channel each TV is *meant* to show, so a drifted one stays
+  // with its neighbours (highlighted) instead of jumping to another section.
+  const channels = state.data.channels || [];
+  const sections = [];
+  const claimed = new Set();
+
+  for (const channel of channels) {
+    const devices = state.data.devices.filter(
+      (d) => d.expected_group_id === channel.group_id);
+    devices.forEach((d) => claimed.add(d.id));
+    sections.push(groupSection({
+      key: `ch${channel.group_id}`,
+      groupId: channel.group_id,
+      name: channel.name,
+      note: channel.note,
+      transmitter: channel.transmitter_ip,
+      devices,
+    }));
+  }
+
+  const rest = state.data.devices.filter((d) => !claimed.has(d.id));
+  if (rest.length) {
+    sections.push(groupSection({
+      key: "unassigned",
+      groupId: null,
+      name: "No expected channel set",
+      note: 'pick one under "Should be" to include these in drift checks',
+      transmitter: null,
+      devices: rest,
+    }));
+  }
+
+  const container = document.getElementById("groups");
+  if (sections.length) container.replaceChildren(...sections);
+  else container.innerHTML = '<div class="empty">No receivers configured.</div>';
+
+  for (const id of state.openRaw) loadRaw(id);
+
+  const events = state.data.events || [];
+  document.getElementById("log").className = "log" + (state.logOpen ? " open" : "");
+  document.getElementById("log-title").textContent =
+    `Recent events${events.length ? " (" + events.length + ")" : ""}`;
+  const logTable = document.getElementById("log-table");
+  logTable.hidden = !state.logOpen;
+  document.querySelector("button.log-head")
+    .setAttribute("aria-expanded", String(state.logOpen));
+  if (!state.logOpen) return;
+
+  document.getElementById("events").innerHTML = events
+    .slice(0, 60)
+    .map((event) => `<tr>
+        <td class="ts">${fmtTime(event.ts)}</td>
+        <td class="kind k-${esc(event.kind)}">${esc(event.kind.replace(/_/g, " "))}</td>
+        <td>${esc(event.receiver_name)}</td>
+        <td>${esc(event.message)}</td></tr>`)
+    .join("") || '<tr><td colspan="4" class="note">Nothing logged yet.</td></tr>';
+}
+
+async function loadRaw(id) {
+  const target = document.getElementById("raw-" + id);
+  if (!target) return;
+  try {
+    const payload = await api(`/api/receivers/${encodeURIComponent(id)}/raw`);
+    const entries = Object.entries(payload.raw || {});
+    target.textContent = entries.length
+      ? entries.map(([cmd, reply]) => `$ ${cmd}\n${reply.trim() || "(no reply)"}`).join("\n\n")
+      : "No replies captured yet.";
+  } catch (err) {
+    target.textContent = "Error: " + err.message;
+  }
+}
+
+async function withPending(id, fn) {
+  state.pending.add(id);
+  render();
+  try { return await fn(); } finally { state.pending.delete(id); }
+}
+
+async function act(id, path, describe) {
+  await withPending(id, async () => {
+    try {
+      const result = await api(`/api/receivers/${encodeURIComponent(id)}/${path}`,
+                               { method: "POST" });
+      toast(`${id}: ${describe(result)}`, result.ok === false ? "bad" : "ok");
+    } catch (err) {
+      toast(`${id}: ${err.message}`, "bad");
+    }
+    await load();
+  });
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-act]");
+  if (!button || button.disabled) return;
+  const { act: action, id, group } = button.dataset;
+
+  if (action === "add-found") {
+    const ip = button.dataset.ip;
+    try {
+      const result = await api("/api/discovered/add", {
+        method: "POST",
+        body: JSON.stringify({ ip }),
+      });
+      toast(`Added ${result.receiver.id} (${ip})`, "ok");
+      await load();
+    } catch (err) {
+      toast(`${ip}: ${err.message}`, "bad");
+    }
+    return;
+  }
+  if (action === "toggle-group") {
+    const key = button.dataset.group;
+    const nowExpanded = button.getAttribute("aria-expanded") !== "true";
+    state.groupOverride[key] = nowExpanded;
+    saveView();
+    render();
+    return;
+  }
+  if (action === "toggle-disabled") {
+    state.disabledOpen = !state.disabledOpen;
+    render();
+    return;
+  }
+  if (action === "enable") {
+    try {
+      await api(`/api/receivers/${encodeURIComponent(id)}/enabled`, {
+        method: "POST",
+        body: JSON.stringify({ enabled: true }),
+      });
+      toast(`${id}: back in service`, "ok");
+      await load();
+    } catch (err) {
+      toast(`${id}: ${err.message}`, "bad");
+    }
+    return;
+  }
+  if (action === "disable") {
+    if (!confirm(
+          `Move ${id} to Spares / In storage?\n\n` +
+          "It stops being polled and stops being counted as offline or " +
+          "drifted. Its name, location and note are kept, and it can be " +
+          "returned to service at any time.")) {
+      return;
+    }
+    try {
+      await api(`/api/receivers/${encodeURIComponent(id)}/enabled`, {
+        method: "POST",
+        body: JSON.stringify({ enabled: false }),
+      });
+      toast(`${id}: moved to Spares / In storage`, "ok");
+      await load();
+    } catch (err) {
+      toast(`${id}: ${err.message}`, "bad");
+    }
+    return;
+  }
+  if (action === "toggle-log") {
+    state.logOpen = !state.logOpen;
+    saveView();
+    render();
+    return;
+  }
+  if (action === "setup-close") {
+    state.setup = null;
+    render();
+    return;
+  }
+  if (action === "setup-go") {
+    const payload = {
+      name: document.getElementById("su-name")?.value?.trim() ?? "",
+      device_name: document.getElementById("su-devname")?.value?.trim() ?? "",
+      ip: document.getElementById("su-ip")?.value?.trim() ?? "",
+      netmask: document.getElementById("su-nm")?.value?.trim() ?? "",
+      gateway: document.getElementById("su-gw")?.value?.trim() ?? "",
+      from_address: state.setup?.address,
+    };
+    const channel = document.getElementById("su-ch")?.value ?? "";
+    if (channel !== "") payload.expected_group_id = Number(channel);
+    if (!payload.ip) { toast("An IP address is required", "bad"); return; }
+    if (!confirm(`Set this device up as ${payload.ip}?\n\n`
+                 + "It reboots to apply the address, so about a minute of "
+                 + "black screen. It is added to the fleet only once it "
+                 + "answers there.")) {
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Setting up, up to 90s…";
+    try {
+      const result = await api("/api/setup", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      toast(result.message, result.ok ? "ok" : "bad");
+      for (const step of result.steps || []) {
+        if (!step.ok) toast(`${step.step}: ${step.message}`, "bad");
+      }
+      if (result.ok) state.setup = null;
+    } catch (err) {
+      toast(`Setup failed: ${err.message}`, "bad");
+    }
+    await load();
+    return;
+  }
+  if (action === "advanced") {
+    state.advanced = state.advanced === id ? null : id;
+    render();
+    return;
+  }
+  if (action === "set-device-name") {
+    const name = document.getElementById("dn-" + id)?.value ?? "";
+    if (!name.trim()) { toast("A name is required", "bad"); return; }
+    await withPending(id, async () => {
+      try {
+        const result = await api(`/api/receivers/${encodeURIComponent(id)}/device-name`, {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        });
+        toast(`${id}: ${result.message}`, result.ok ? "ok" : "bad");
+      } catch (err) {
+        toast(`${id}: ${err.message}`, "bad");
+      }
+      await load();
+    });
+    return;
+  }
+  if (action === "set-address") {
+    const ip = document.getElementById("ip-" + id)?.value?.trim() ?? "";
+    const netmask = document.getElementById("nm-" + id)?.value?.trim() ?? "";
+    const gateway = document.getElementById("gw-" + id)?.value?.trim() ?? "";
+    if (!confirm(
+          `Move ${id} to ${ip}?\n\n` +
+          "The device reboots to apply this — roughly a minute of black " +
+          "screen. The config is updated only once it answers at the new " +
+          "address, so nothing is lost if it does not.")) {
+      return;
+    }
+    toast(`${id}: changing address, this takes up to 90s…`);
+    await withPending(id, async () => {
+      try {
+        const result = await api(`/api/receivers/${encodeURIComponent(id)}/address`, {
+          method: "POST",
+          body: JSON.stringify({ ip, netmask, gateway }),
+        });
+        toast(`${id}: ${result.message}`, result.ok ? "ok" : "bad");
+        if (result.ok) state.advanced = null;
+      } catch (err) {
+        toast(`${id}: ${err.message}`, "bad");
+      }
+      await load();
+    });
+    return;
+  }
+  if (action === "rename") {
+    state.renaming = id;
+    render();
+    document.getElementById("name-" + id)?.select();
+    return;
+  }
+  if (action === "rename-cancel") {
+    state.renaming = null;
+    render();
+    return;
+  }
+  if (action === "rename-save") {
+    const name = document.getElementById("name-" + id)?.value ?? "";
+    const location = document.getElementById("loc-" + id)?.value ?? "";
+    const note = document.getElementById("note-" + id)?.value ?? "";
+    if (!name.trim()) { toast("A name is required", "bad"); return; }
+    try {
+      await api(`/api/receivers/${encodeURIComponent(id)}/name`, {
+        method: "POST",
+        body: JSON.stringify({ name, location, note }),
+      });
+      state.renaming = null;
+      toast(`Renamed to ${name.trim()}`, "ok");
+      await load();
+    } catch (err) {
+      toast(`Rename failed: ${err.message}`, "bad");
+    }
+    return;
+  }
+  if (action === "raw") {
+    state.openRaw.has(id) ? state.openRaw.delete(id) : state.openRaw.add(id);
+    render();
+    return;
+  }
+  if (action === "channel") {
+    await withPending(id, async () => {
+      try {
+        const result = await api(`/api/receivers/${encodeURIComponent(id)}/channel`, {
+          method: "POST",
+          body: JSON.stringify({ group_id: Number(group) }),
+        });
+        toast(`${id}: ${result.message}`, result.ok ? "ok" : "bad");
+      } catch (err) {
+        toast(`${id}: ${err.message}`, "bad");
+      }
+      await load();
+    });
+    return;
+  }
+  if (action === "identify") {
+    await act(id, "identify", () => "blinked — watch for the screen that went dark");
+    return;
+  }
+  if (action === "hold") {
+    await act(id, "hold", () =>
+      "held dark — go find the blank screen, then Restore");
+    return;
+  }
+  if (action === "release") {
+    await act(id, "release", (r) => r.message);
+    return;
+  }
+  if (action === "bounce") {
+    await act(id, "bounce", (r) => r.message);
+    return;
+  }
+  if (action === "reboot") {
+    if (!confirm(`Reboot ${id}? The TV goes black for about a minute.`)) return;
+    await act(id, "reboot", () => "reboot sent");
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (!state.renaming) return;
+  if (!event.target.closest(".rename")) return;
+  if (event.key === "Enter") {
+    event.preventDefault();
+    document.querySelector(`button[data-act="rename-save"][data-id="${state.renaming}"]`)
+      ?.click();
+  } else if (event.key === "Escape") {
+    state.renaming = null;
+    render();
+  }
+});
+
+document.addEventListener("change", async (event) => {
+  const select = event.target.closest("select[data-act='expected']");
+  if (!select) return;
+  const id = select.dataset.id;
+  const raw = select.value;
+  try {
+    await api(`/api/receivers/${encodeURIComponent(id)}/expected`, {
+      method: "POST",
+      body: JSON.stringify({ group_id: raw === "" ? null : Number(raw) }),
+    });
+    toast(`${id}: expected channel saved`, "ok");
+    await load();
+  } catch (err) {
+    toast(`${id}: ${err.message}`, "bad");
+  }
+});
+
+async function runScan() {
+  const configured = state.data?.discovery?.ranges || [];
+  const answer = prompt(
+    "Range(s) to scan, comma separated.\n\n" +
+    "Keep it to subnets that might hold devices. Sweeping a whole VLAN\n" +
+    "probes tens of thousands of empty addresses, and that ARP load has\n" +
+    "knocked the receivers off their streams for ~30s.",
+    configured.join(", ") || "10.0.2.1-254");
+  if (answer === null) return;
+  const ranges = answer.split(",").map((r) => r.trim()).filter(Boolean);
+  if (!ranges.length) return;
+
+  let started;
+  let force = false;
+  for (;;) {
+    try {
+      started = await api("/api/discover", {
+        method: "POST",
+        body: JSON.stringify({ ranges, force }),
+      });
+      break;
+    } catch (err) {
+      // A very wide sweep is refused once, with the reason, so it cannot be
+      // run by accident.
+      if (!force && /wide sweep/.test(err.message)) {
+        if (confirm(err.message + "\n\nScan anyway?")) {
+          force = true;
+          continue;
+        }
+        return;
+      }
+      toast(`Scan refused: ${err.message}`, "bad");
+      return;
+    }
+  }
+  toast(`Scanning ${started.addresses} address(es) — this runs in the background`);
+
+  // The scan is on its own thread; follow it through /api/state.
+  const before = (state.data.discovered || []).length;
+  while (true) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await load();
+    if (!state.data?.discovery?.running) break;
+  }
+  const error = state.data?.discovery?.error;
+  if (error) {
+    toast(`Scan failed: ${error}`, "bad");
+    return;
+  }
+  const count = (state.data.discovered || []).length;
+  toast(count
+    ? `Found ${count} device(s) not in the config`
+    : "Nothing new — every VEO that answered is already in the config",
+    count ? "ok" : "");
+}
+
+document.getElementById("setup").addEventListener("click", async () => {
+  toast("Looking at the factory-default address…");
+  try {
+    state.setup = await api("/api/setup");
+    render();
+  } catch (err) {
+    toast(`Setup check failed: ${err.message}`, "bad");
+  }
+});
+
+document.getElementById("scan").addEventListener("click", runScan);
+
+document.getElementById("add-all").addEventListener("click", async () => {
+  const devices = state.data.discovered || [];
+  if (!devices.length) return;
+  if (!confirm(`Add all ${devices.length} device(s) to the config?`)) return;
+  let added = 0;
+  for (const device of devices) {
+    try {
+      await api("/api/discovered/add", {
+        method: "POST",
+        body: JSON.stringify({ ip: device.ip }),
+      });
+      added += 1;
+    } catch (err) {
+      toast(`${device.ip}: ${err.message}`, "bad");
+    }
+  }
+  toast(`Added ${added} of ${devices.length}`, added ? "ok" : "bad");
+  await load();
+});
+
+document.getElementById("release-all").addEventListener("click", async () => {
+  try {
+    const result = await api("/api/release-all", { method: "POST" });
+    const n = (result.released || []).length;
+    toast(`Restored ${n} screen${n === 1 ? "" : "s"}`, result.ok ? "ok" : "bad");
+  } catch (err) {
+    toast(`Restore failed: ${err.message}`, "bad");
+  }
+  await load();
+});
+
+document.getElementById("sort").addEventListener("change", (event) => {
+  state.sort = event.target.value === "ip" ? "ip" : "name";
+  saveView();
+  render();
+});
+
+document.getElementById("import-config").addEventListener("click", () => {
+  document.getElementById("import-file").click();
+});
+
+document.getElementById("import-file").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";                 // allow re-picking the same file
+  if (!file) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (err) {
+    toast(`${file.name} is not valid JSON: ${err.message}`, "bad");
+    return;
+  }
+  const receivers = Array.isArray(parsed.receivers) ? parsed.receivers.length : 0;
+  const channels = Array.isArray(parsed.channels) ? parsed.channels.length : 0;
+  if (!confirm(
+        `Restore from ${file.name}?\n\n` +
+        `${receivers} receivers, ${channels} channels.\n\n` +
+        "This replaces every name, IP, channel and expected channel. " +
+        "The current config is kept as a timestamped backup in the container.")) {
+    return;
+  }
+  try {
+    const result = await api("/api/config", {
+      method: "POST",
+      body: JSON.stringify(parsed),
+    });
+    toast(`Restored ${result.receivers} receivers, ${result.channels} channels`, "ok");
+    await load();
+  } catch (err) {
+    toast(`Restore refused: ${err.message}`, "bad");
+  }
+});
+
+function setAllGroups(expanded) {
+  for (const section of document.querySelectorAll("button.group-head")) {
+    state.groupOverride[section.dataset.group] = expanded;
+  }
+  saveView();
+  render();
+}
+
+document.getElementById("expand-all")
+  .addEventListener("click", () => setAllGroups(true));
+document.getElementById("collapse-all")
+  .addEventListener("click", () => setAllGroups(false));
+
+document.getElementById("refresh").addEventListener("click", async () => {
+  await api("/api/refresh", { method: "POST" }).catch(() => {});
+  toast("Poll requested");
+  setTimeout(load, 1200);
+});
+
+document.getElementById("repair").addEventListener("click", async () => {
+  const count = state.data.summary.drifted;
+  if (!confirm(`Set ${count} receiver(s) back to their expected channel?`)) return;
+  try {
+    const result = await api("/api/repair", { method: "POST" });
+    const repaired = result.repaired || [];
+    toast(`Repaired ${repaired.filter((r) => r.ok).length}/${repaired.length}`,
+          result.ok ? "ok" : "bad");
+  } catch (err) {
+    toast("Repair failed: " + err.message, "bad");
+  }
+  await load();
+});
+
+loadView();
+document.getElementById("sort").value = state.sort;
+load();
+showAccount();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

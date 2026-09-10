@@ -1,0 +1,54 @@
+{
+  "_comment": "Copy to config.json and edit. Group ID = the channel number shown on the unit's LED display.",
+
+  "poll_interval_seconds": 30,
+  "telnet_port": 9999,
+  "timeout_seconds": 4.0,
+  "max_workers": 8,
+
+  "_healing_comment": "Both off by default. auto_repair puts a TV found on the wrong channel back; auto_nudge_on_signal_loss re-acquires one that has lost its stream.",
+  "auto_repair": false,
+  "auto_nudge_on_signal_loss": false,
+  "auto_repair_after_polls": 2,
+
+  "_bounce_comment": "Spare Group ID that identify and re-acquire bounce through. Omit to use the highest ID no transmitter of yours uses.",
+  "bounce_via_group_id": null,
+  "identify_dwell_seconds": 6.0,
+
+  "_discovery_comment": "Ranges the Scan network button sweeps. Keep them to subnets that might hold devices: a sweep of tens of thousands of empty addresses is an ARP flood. interval_hours 0 means only when asked.",
+  "discovery_ranges": ["10.0.1.1-254", "10.0.2.1-254"],
+  "discovery_interval_hours": 0,
+
+  "_setup_comment": "Where a factory-reset device appears, and the netmask and gateway to prefill when commissioning one. 192.168.1.12 is the documented default for a receiver; a transmitter is 192.168.1.11.",
+  "setup_address": "192.168.1.12",
+  "setup_netmask": "255.255.255.0",
+  "setup_gateway": "10.0.0.1",
+
+  "_channels_comment": "One per transmitter. multicast_group is optional: read it off a transmitter's web page with tools/probe.py, and switch output becomes readable in channel names.",
+  "channels": [
+    {"group_id": 1, "name": "Reception", "transmitter_ip": "10.0.1.1",
+     "multicast_group": "239.255.42.43", "note": "Dashboard Reception"},
+    {"group_id": 2, "name": "Workshop", "transmitter_ip": "10.0.1.2",
+     "multicast_group": "239.255.42.44", "note": "Dashboard Workshop"},
+    {"group_id": 3, "name": "Canteen", "transmitter_ip": "10.0.1.3",
+     "multicast_group": "239.255.42.45", "note": "Dashboard Canteen"}
+  ],
+
+  "_receivers_comment": "One per TV. expected_group_id is the channel it should show, which is what turns drift detection and one-click repair on. note records anything deliberate. enabled false files it under Spares / In storage.",
+  "receivers": [
+    {"id": "rx-01", "name": "Reception desk", "ip": "10.0.2.1",
+     "location": "Reception", "expected_group_id": 1},
+    {"id": "rx-02", "name": "Reception waiting area", "ip": "10.0.2.2",
+     "location": "Reception", "expected_group_id": 1},
+    {"id": "rx-10", "name": "Workshop north", "ip": "10.0.2.10",
+     "location": "Workshop", "expected_group_id": 2},
+    {"id": "rx-11", "name": "Workshop south", "ip": "10.0.2.11",
+     "location": "Workshop", "expected_group_id": 2,
+     "note": "on Reception at the team lead's request"},
+    {"id": "rx-20", "name": "Canteen", "ip": "10.0.2.20",
+     "location": "Canteen", "expected_group_id": 3},
+    {"id": "rx-90", "name": "spare-01", "ip": "10.0.2.90",
+     "expected_group_id": null, "enabled": false,
+     "note": "in storage"}
+  ]
+}

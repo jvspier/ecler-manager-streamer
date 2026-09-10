@@ -1,0 +1,53 @@
+[Unit]
+Description=Ecler VEO Manager
+Documentation=file:/opt/eclermanager/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=eclermanager
+Group=eclermanager
+WorkingDirectory=/opt/eclermanager
+ExecStart=/usr/bin/python3 /opt/eclermanager/run.py \
+    --config /etc/eclermanager/config.json \
+    --event-log /var/lib/eclermanager/events.jsonl \
+    --host 0.0.0.0 --port 8477
+Restart=on-failure
+RestartSec=5s
+
+# /opt is read-only to the service, so don't try to write .pyc there.
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# Credentials for the dashboard login, written by tools/setpassword.py.
+# The leading "-" keeps the service starting when no login is set up yet.
+EnvironmentFile=-/etc/eclermanager/eclermanager.env
+
+# The dashboard rewrites config.json when you change a "Should be" value, and
+# appends to the event log, so those two paths must stay writable.  Everything
+# else, including the application directory, is read-only to the service.
+ProtectSystem=strict
+ReadWritePaths=/etc/eclermanager /var/lib/eclermanager
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictRealtime=yes
+
+# Deliberately NOT set: ProtectKernelTunables, ProtectKernelModules,
+# ProtectControlGroups.  Each needs to remount /proc/sys or /sys/fs/cgroup,
+# which an unprivileged LXC is not allowed to do -- the service would fail to
+# start with "Failed to set up mount namespacing: Permission denied".  They also
+# protect against nothing here: with CapabilityBoundingSet empty the service
+# cannot touch host kernel state anyway.  On bare metal you can add them back.
+
+[Install]
+WantedBy=multi-user.target
