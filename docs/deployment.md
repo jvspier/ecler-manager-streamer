@@ -165,7 +165,25 @@ is quicker and less error-prone than copying tarballs around.
 
 ### One-time setup
 
-**In the container**, install git and make a read-only deploy key:
+**The container only ever pulls.** Nothing is pushed from it, and it needs no
+write access to anything. The only question is how it authenticates to *read*,
+which depends on whether the repository is public:
+
+**Public repository — no credential needed:**
+
+```bash
+apt-get update && apt-get install -y git
+rm -rf /root/eclermanager
+git clone https://github.com/<owner>/<repo>.git /root/eclermanager
+bash /root/eclermanager/deploy/install.sh
+```
+
+**Private repository — a read-only deploy key.** GitHub requires a credential
+even to read a private repo. A "deploy key" is its name for a credential scoped
+to one repository; with write access unchecked it can *only* read, which is all
+this needs.
+
+In the container:
 
 ```bash
 apt-get update && apt-get install -y git
@@ -173,21 +191,24 @@ ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519 -C "eclermanager-deploy"
 cat /root/.ssh/id_ed25519.pub
 ```
 
-**On GitHub**, add that public key at *Settings → Deploy keys → Add deploy key*.
-Leave "Allow write access" **unchecked** — the container only ever needs to
-read, and a read-only key cannot be used to push anything into the repository if
-the container is ever compromised.
+On GitHub, add that public key at *Settings → Deploy keys → Add deploy key*, and
+leave **"Allow write access" unchecked**. That is the whole point: if the
+container is ever compromised, the key cannot be used to alter the repository or
+to reach any other repository.
 
-**Back in the container**, clone over SSH:
+Back in the container:
 
 ```bash
-ssh -T git@github.com          # accept the host key; "successfully authenticated" is the goal
+ssh -o StrictHostKeyChecking=accept-new -T git@github.com
+    # "successfully authenticated, but GitHub does not provide shell access" = success
 rm -rf /root/eclermanager
 git clone git@github.com:<owner>/<repo>.git /root/eclermanager
 bash /root/eclermanager/deploy/install.sh
 ```
 
-For a public repository, skip the key entirely and clone over HTTPS.
+A personal access token over HTTPS works too, and some people find it easier to
+picture — but it lives in the container's git config and expires, where a
+read-only deploy key does neither.
 
 ### Every update after that
 

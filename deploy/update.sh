@@ -44,8 +44,11 @@ cd "$CHECKOUT"
 [[ -n "$BRANCH" ]] || BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 step "Fetching origin"
-git fetch --quiet origin "$BRANCH" || die "could not fetch. If this is a private
-  repo, check the deploy key: ssh -T git@github.com"
+git fetch --quiet origin "$BRANCH" || die "could not fetch $(git remote get-url origin).
+  A public repo over HTTPS needs no credential; a private one does.
+  Over SSH:   ssh -T git@github.com     (expect \"successfully authenticated\")
+  Over HTTPS: the stored token may have expired.
+  Either way the container only reads -- nothing is ever pushed from here."
 
 BEFORE=$(git rev-parse HEAD)
 AFTER=$(git rev-parse "origin/$BRANCH")
