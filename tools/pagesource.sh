@@ -244,20 +244,28 @@ echo "  $URL"
 # and a bare Xvfb has no window manager, so the request goes nowhere. --app
 # opens the page as its own chromeless window which the browser maps itself,
 # sized by --window-size. Pass --kiosk if the display does have a WM.
-DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" \
-    $KIOSK_FLAGS \
+# Exactly the flag set proven to work by hand, and nothing more. Every extra
+# flag added here was a guess, and one of them was stopping the browser from
+# staying up; a kiosk browser needs none of them. Add back only what a real
+# problem demands.
+#
+#   --no-zygote          the container blocks Chromium's zygote process model
+#   --no-sandbox         an unprivileged container cannot use the sandbox
+#   --disable-gpu        there is no GPU on the virtual display
+#   --disable-dev-shm-usage  /dev/shm is small in a container
+#   --app=<url>          a chromeless window the browser maps itself, so no
+#                        window manager is needed (unlike --kiosk)
+#
+# No setsid on the browser: it is not needed once its descriptors are closed,
+# and it was another difference from the command known to work.
+DISPLAY="$DISPLAY_NUM" "$BROWSER" \
     --no-sandbox \
     --no-zygote \
     --disable-gpu \
     --disable-dev-shm-usage \
-    --disable-infobars \
-    --disable-session-crashed-bubble \
-    --disable-features=TranslateUI \
-    --noerrdialogs \
-    --no-first-run \
     --window-size="$WIDTH,$HEIGHT" \
-    --window-position=0,0 \
     --user-data-dir="$PROFILE" \
+    $KIOSK_FLAGS \
     $APP_FLAG \
     >>"$LOGFILE" 2>&1 </dev/null &
 BROWSER_PID=$!
