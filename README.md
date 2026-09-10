@@ -11,12 +11,36 @@ control protocol, so none of that is necessary.
 Pure Python 3.11+ standard library. No `pip install`, no build step, no
 dependencies.
 
-```
-▸ 1  Reception      from 10.0.1.1 · 12 assigned   ●●●●●●●●●●●●   all good
-▸ 2  Workshop       from 10.0.1.2 · 12 assigned   ●●●●●●●●●●●●   all good
-▾ 4  Warehouse      from 10.0.1.4 ·  5 assigned   1 wrong channel
-     [ Packing north ] [ Packing south ] [ Outbound ] [ Consolidation ] …
-```
+<a href="images/mainscreen.png">
+  <img src="images/mainscreen.png" alt="The manager's main view: one collapsed row per transmitter, each with a dot per TV, and an event log below" width="820">
+</a>
+
+**The main view.** One row per transmitter, collapsed. Each row carries a dot
+per TV — green, amber, red — so a healthy channel stays a single line you can
+still read at a glance. Anything with a problem opens itself: here channel 3 is
+flagged `no TVs assigned`, because a transmitter is streaming to nobody. Below
+that, receivers deliberately set aside sit in **Spares / In storage**, not
+polled and not counted as faults. The event log at the bottom is what answers
+"how often does this actually happen?" — every drift, signal loss, switch and
+re-acquire, timestamped.
+
+<a href="images/detailedview.png">
+  <img src="images/detailedview.png" alt="A transmitter's group expanded, showing one card per TV with channel buttons and per-device actions" width="820">
+</a>
+
+**A group expanded.** One card per TV: its name, address and MAC, a `signal`
+chip from the device's own video-lock state, and how long it took to answer.
+The channel buttons switch it, ★ marks where it should be, and the current
+channel is highlighted. `Should be` sets the expected channel and is what turns
+drift detection on. Underneath: `identify` blinks the screen, `hold dark` parks
+it until you release it, `re-acquire` forces it to re-join its stream, `raw`
+shows the exact bytes the device last replied with, and `device settings` opens
+address and name changes. One card shows a completed action —
+*"identify re-acquire: re-acquired channel 1, signal is back"* — because every
+action is read back from the device rather than assumed.
+
+*(Click either image for the full-size version. Receiver names and addresses are
+blurred.)*
 
 ## What it does
 
