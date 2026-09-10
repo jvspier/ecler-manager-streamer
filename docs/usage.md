@@ -54,6 +54,12 @@ Each card carries:
 - **re-acquire**, which bounces it to a spare channel and back, forcing it to
   re-join its stream: the remote equivalent of unplugging it, and the fix for a
   TV on the right channel showing nothing;
+- **device settings** holds the things that are not everyday operations: an
+  **Any channel (0-63)** field for a Group ID that no transmitter serves yet —
+  a test stream, or a channel added before its source exists — plus setting the
+  name stored in the device and changing its IP address. The channel buttons
+  above only cover what is in your config, which is right for daily use and
+  wrong when you need channel 5 once;
 - **rename**, which edits the name, location and a free-text **note** in place
   and writes them to `config.json` — Enter saves, Escape cancels. Use it during
   the identify walk, and use the note for anything deliberate ("on Reception at

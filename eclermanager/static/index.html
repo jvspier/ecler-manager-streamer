@@ -515,7 +515,11 @@ function deviceCard(device) {
     statusBlock = `<div class="chips">${chips.join("")}</div>`;
   } else {
     const shownName = device.channel_name
-      || (device.online ? "unknown channel" : "no data");
+      || (device.online
+          ? (device.group_id === null
+              ? "unknown channel"
+              : `channel ${device.group_id} — not in your config`)
+          : "no data");
     const expected = device.drifted
       ? `<span class="chip warn">should be ${device.expected_group_id} · ` +
         `${esc(device.expected_channel_name || "?")}</span>`
@@ -626,6 +630,17 @@ function advancedPanel(device) {
   const guessMask = parts.length === 4 ? "255.255.0.0" : "";
   const guessGw = parts.length === 4 ? `${parts[0]}.${parts[1]}.0.1` : "";
   return `<div class="advanced">
+      <h4>Any channel (0-63)</h4>
+      <div class="field">
+        <input id="ch-${device.id}" type="number" min="0" max="63" step="1"
+               value="${device.group_id ?? ""}" placeholder="Group ID"
+               aria-label="Channel">
+        <button data-act="set-any-channel" data-id="${device.id}">Switch</button>
+      </div>
+      <div class="warn-note">The buttons above cover the channels in your
+        config. This sets any Group ID the device accepts — for a channel no
+        transmitter serves yet, or a test stream.</div>
+
       <h4>Stored in the device</h4>
       <div class="field">
         <input id="dn-${device.id}" value="${esc(device.device_name || "")}"
@@ -1116,6 +1131,28 @@ document.addEventListener("click", async (event) => {
   if (action === "advanced") {
     state.advanced = state.advanced === id ? null : id;
     render();
+    return;
+  }
+  if (action === "set-any-channel") {
+    const field = document.getElementById("ch-" + id);
+    const raw = field?.value?.trim() ?? "";
+    const channel = Number(raw);
+    if (raw === "" || !Number.isInteger(channel) || channel < 0 || channel > 63) {
+      toast("Enter a whole number from 0 to 63", "bad");
+      return;
+    }
+    await withPending(id, async () => {
+      try {
+        const result = await api(`/api/receivers/${encodeURIComponent(id)}/channel`, {
+          method: "POST",
+          body: JSON.stringify({ group_id: channel }),
+        });
+        toast(`${id}: ${result.message}`, result.ok ? "ok" : "bad");
+      } catch (err) {
+        toast(`${id}: ${err.message}`, "bad");
+      }
+      await load();
+    });
     return;
   }
   if (action === "set-device-name") {
