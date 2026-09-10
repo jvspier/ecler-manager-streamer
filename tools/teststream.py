@@ -36,9 +36,11 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -158,6 +160,49 @@ def warn_if_multihomed() -> None:
               "  --interface <iface> to pin it.\n", file=sys.stderr)
 
 
+def manage(pidfile: Path, *, stop: bool) -> int:
+    """Report on, or stop, a stream started with --detach."""
+    log = Path(str(pidfile).replace(".pid", ".log"))
+    if not pidfile.exists():
+        print(f"nothing recorded in {pidfile}")
+        if log.exists():
+            print(f"\nlast of {log}:")
+            print("\n".join(f"  {line}" for line in
+                             log.read_text().splitlines()[-8:]))
+        return 0 if stop else 1
+
+    try:
+        pid = int(pidfile.read_text().strip())
+    except (OSError, ValueError):
+        print(f"✗ {pidfile} is unreadable", file=sys.stderr)
+        return 1
+
+    alive = Path(f"/proc/{pid}").exists()
+    if stop:
+        if alive:
+            import signal
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(20):
+                time.sleep(0.25)
+                if not Path(f"/proc/{pid}").exists():
+                    break
+            else:
+                os.kill(pid, signal.SIGKILL)
+                print(f"  forced pid {pid}")
+            print(f"stopped pid {pid}")
+        else:
+            print(f"pid {pid} was already gone")
+        pidfile.unlink(missing_ok=True)
+        return 0
+
+    print(f"pid {pid}: {'running' if alive else 'GONE'}")
+    if log.exists():
+        print(f"\nlast of {log}:")
+        print("\n".join(f"  {line}" for line in
+                         log.read_text().splitlines()[-12:]))
+    return 0 if alive else 1
+
+
 def build_command(args: argparse.Namespace) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel, "-re"]
 
@@ -217,7 +262,7 @@ def build_command(args: argparse.Namespace) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    target = parser.add_mutually_exclusive_group(required=True)
+    target = parser.add_mutually_exclusive_group()
     target.add_argument("--channel", type=int, metavar="N",
                         help="Group ID to stream to; its multicast address is "
                              "looked up in the config, or derived from the "
@@ -262,7 +307,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--loglevel", default="info")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the ffmpeg command and stop")
+    lifecycle = parser.add_mutually_exclusive_group()
+    lifecycle.add_argument("--detach", action="store_true",
+                           help="run in the background and return. Useful "
+                                "through 'pct exec', which does not forward "
+                                "Ctrl-C into the container")
+    lifecycle.add_argument("--stop", action="store_true",
+                           help="stop a stream started with --detach")
+    lifecycle.add_argument("--status", action="store_true",
+                           help="report on a stream started with --detach")
     args = parser.parse_args(argv)
+
+    pidfile = Path(f"/tmp/teststream-{args.port}.pid")
+
+    if args.status or args.stop:
+        return manage(pidfile, stop=args.stop)
+
+    if args.channel is None and not args.group:
+        parser.error("one of --channel or --group is required to start a stream")
 
     if args.channel is not None:
         args.group = group_for_channel(args.channel, args.config)
@@ -319,6 +381,28 @@ def main(argv: list[str] | None = None) -> int:
     print("  a keyframe. Ctrl+C here to stop.")
     print()
 
+    if args.detach:
+        # start_new_session detaches from this terminal, so the stream survives
+        # the exec session that started it.
+        log = Path(f"/tmp/teststream-{args.port}.log")
+        with log.open("ab") as handle:
+            process = subprocess.Popen(command, stdout=handle, stderr=handle,
+                                       stdin=subprocess.DEVNULL,
+                                       start_new_session=True)
+        time.sleep(3)
+        if process.poll() is not None:
+            print(f"✗ ffmpeg exited immediately. Its output:", file=sys.stderr)
+            print(log.read_text()[-1500:], file=sys.stderr)
+            return 1
+        pidfile.write_text(str(process.pid))
+        print(f"→ running in the background as pid {process.pid}")
+        print(f"  log:    {log}")
+        print(f"  status: {sys.argv[0]} --port {args.port} --status")
+        print(f"  stop:   {sys.argv[0]} --port {args.port} --stop")
+        return 0
+
+    print("  (Ctrl-C to stop. Through 'pct exec' that does not arrive -- use\n"
+          "   --detach instead, or stop it with: pkill -f teststream.py)\n")
     try:
         return subprocess.call(command)
     except KeyboardInterrupt:

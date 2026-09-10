@@ -317,8 +317,20 @@ real dashboards, so 5 is free (confirmed: a receiver set to CH5 shows
 
 ```bash
 pct exec <ctid> -- python3 -u /opt/eclermanager/tools/teststream.py \
-    --channel 5 --interface eth1
+    --channel 5 --interface eth1 --detach
 ```
+
+**Use `--detach` through `pct exec`.** That does not forward Ctrl-C into the
+container, so a foreground stream cannot be stopped from the terminal that
+started it. Detached, it runs in its own session with a pidfile:
+
+```bash
+... teststream.py --status          # is it alive, and what does ffmpeg say?
+... teststream.py --stop            # stop it
+```
+
+Both address the stream by `--port`, so neither needs the channel repeating.
+If a foreground one is already stuck, `pkill -f teststream.py`.
 
 `--channel N` resolves the address itself — from the config if recorded, else
 from the pattern confirmed on this network, `239.255.42.(42+N)`. It **refuses a
