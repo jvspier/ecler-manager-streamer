@@ -191,6 +191,14 @@ if [[ "$AVAILABLE" -gt 0 && "$AVAILABLE" -lt 1500 ]]; then
     echo "! only ${AVAILABLE} MB available; a browser may be tight" >&2
 fi
 
+# A crashed Chromium leaves a SingletonLock and a "was not shut down
+# correctly" flag in its profile, and the next start can refuse or sit on a
+# restore prompt instead of the page.  The profile holds nothing worth keeping
+# for a kiosk browser, so start clean every time.
+PROFILE="/tmp/pagesource-${DISPLAY_NUM#:}-profile"
+rm -rf "$PROFILE"
+mkdir -p "$PROFILE"
+
 step "Starting Xvfb on $DISPLAY_NUM at $SIZE"
 Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp &
 XVFB_PID=$!
@@ -239,7 +247,7 @@ DISPLAY="$DISPLAY_NUM" "$BROWSER" \
     --no-first-run \
     --window-size="$WIDTH,$HEIGHT" \
     --window-position=0,0 \
-    --user-data-dir="/tmp/pagesource-${DISPLAY_NUM#:}" \
+    --user-data-dir="$PROFILE" \
     $APP_FLAG \
     >>"$LOGFILE" 2>&1 &
 BROWSER_PID=$!
