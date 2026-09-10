@@ -212,14 +212,24 @@ fi
 
 step "Starting $BROWSER on $DISPLAY_NUM"
 echo "  $URL"
-# Deliberately NOT --kiosk: kiosk mode asks a window manager to make the
-# window fullscreen, and a bare Xvfb has no window manager, so the request
-# goes nowhere and the window can end up never mapped -- a display that stays
-# black while the browser runs happily. --window-size with --app is mapped by
-# the browser itself and needs no WM.  Pass --kiosk to override.
+# Two deliberate choices here, each learned the hard way:
+#
+# --no-zygote. Chromium normally pre-forks a "zygote" process and clones render
+# processes from it using CLONE_NEWUSER/NEWPID/NEWNET. An unprivileged LXC
+# blocks that even with nesting=1 and --no-sandbox, and the browser dies within
+# a second or two of drawing its first window, logging "Failed to send
+# GetTerminationStatus message to zygote" amid a lot of unrelated dbus noise.
+# --no-zygote skips that model; process spawning is marginally slower, which
+# does not matter for a browser showing one page.
+#
+# NOT --kiosk. Kiosk mode asks a window manager to make the window fullscreen,
+# and a bare Xvfb has no window manager, so the request goes nowhere. --app
+# opens the page as its own chromeless window which the browser maps itself,
+# sized by --window-size. Pass --kiosk if the display does have a WM.
 DISPLAY="$DISPLAY_NUM" "$BROWSER" \
     $KIOSK_FLAGS \
     --no-sandbox \
+    --no-zygote \
     --disable-gpu \
     --disable-dev-shm-usage \
     --disable-infobars \

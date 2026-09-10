@@ -399,21 +399,21 @@ apt-get install -y xvfb chromium fonts-liberation fonts-dejavu-core
 bash /opt/eclermanager/tools/pagesource.sh --url https://your-dashboard/
 ```
 
-**In an unprivileged container, this needs `nesting=1`.** Chromium's zygote
-clones with `CLONE_NEWUSER`, `CLONE_NEWPID` and `CLONE_NEWNET`, which the
-container blocks otherwise — and `--no-sandbox` does not help, because the
-process model uses those namespaces regardless. The symptom is precise: a
-window appears, the browser is gone a second later, and the log is full of
-dbus errors that have nothing to do with it.
+**In an unprivileged container, Chromium needs `--no-zygote`.** It normally
+pre-forks a "zygote" process and clones render processes from it using
+`CLONE_NEWUSER`, `CLONE_NEWPID` and `CLONE_NEWNET`. The container blocks that
+**even with `nesting=1` and `--no-sandbox`**, and the browser dies a second or
+two after drawing its first window, logging `Failed to send GetTerminationStatus
+message to zygote` among a great deal of unrelated dbus noise.
 
-```bash
-pct set <ctid> -features nesting=1
-pct stop <ctid> && pct start <ctid>          # a features change needs a restart
-```
+`pagesource.sh` passes `--no-zygote` for this reason, and it is harmless
+elsewhere — process spawning is marginally slower, which does not matter for a
+browser showing one page.
 
-Nesting exposes the host's procfs and sysfs to the guest, so it is worth
-thinking about where the browser work lives: on a dedicated streaming box that
-trade costs nothing, on a shared host it is a reason to move it.
+`nesting=1` alone was **not** sufficient, which is worth knowing before taking
+that trade: nesting exposes the host's procfs and sysfs to the guest. With
+`--no-zygote` in place, rendering worked in an unprivileged container without
+nesting.
 
 Nothing appears on a physical output — Xvfb is a framebuffer in memory. Check
 what actually rendered *before* streaming it anywhere, because a page that has
@@ -456,17 +456,17 @@ because an unprivileged LXC cannot use Chromium's sandbox, `--disable-gpu` and
 
 ### Provisioning a dedicated streaming box
 
-Rendering pages in an unprivileged LXC was tried and abandoned. With
-`nesting=1`, 4 GB of RAM, `--no-sandbox` and `--disable-dev-shm-usage`,
-Chromium still died on startup with `Failed to send GetTerminationStatus
-message to zygote` — its process model wants namespace operations the container
-would not grant. Every other part of the pipeline worked there, including the
-capture: an `ffmpeg` grab of the empty display returned the X root cursor, so
-`x11grab` was reading the display correctly and there was simply nothing on it.
+Rendering does work in an unprivileged LXC, once `--no-zygote` is passed — see
+above. A dedicated box is still worth having, for reasons that have nothing to
+do with whether it can be made to run:
 
-On bare metal none of that applies. A plain Debian install is also less to
-reason about than a container that needs four flags and a security trade to run
-a browser.
+- **Failure domains.** A streamer on the Proxmox host means one dead machine
+  takes out both the dashboards and the tool you would use to diagnose them.
+- **Memory.** Each stream needs its own browser, 300-800 MB apiece. That is a
+  lot to add to a host running anything else.
+- **Less to reason about.** A plain Debian install needs none of
+  `--no-zygote`, `--no-sandbox`, `--disable-dev-shm-usage` or a nesting trade,
+  and `/dev/dri` is simply there.
 
 **1. Install Debian, minimal.** No desktop — this box renders pages to a
 framebuffer, so it needs no display stack of its own. Give it a static address
