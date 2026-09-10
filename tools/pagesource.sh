@@ -67,6 +67,7 @@ fi
 # The browser's own output is the only useful diagnostic when a page renders
 # black, so it is kept rather than discarded.
 LOGFILE="/tmp/pagesource-${DISPLAY_NUM#:}.log"
+XVFB_LOG="/tmp/pagesource-${DISPLAY_NUM#:}-xvfb.log"
 
 case "$ACTION" in
 shot)
@@ -133,14 +134,19 @@ stop)
     [[ -f "$PIDFILE" ]] || { echo "nothing to stop for $DISPLAY_NUM"; exit 0; }
     while read -r pid what; do
         if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null && echo "  stopped $what ($pid)"
+            # setsid makes each child a process-group leader, so signal the
+            # whole group: a browser leaves helper processes behind otherwise.
+            kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null
+            echo "  stopped $what ($pid)"
         fi
     done < "$PIDFILE"
     sleep 1
     # Anything that ignored SIGTERM.
     while read -r pid what; do
-        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null \
-            && echo "  forced $what ($pid)"
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 -- "-$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null
+            echo "  forced $what ($pid)"
+        fi
     done < "$PIDFILE"
     rm -f "$PIDFILE"
     exit 0
@@ -200,7 +206,11 @@ rm -rf "$PROFILE"
 mkdir -p "$PROFILE"
 
 step "Starting Xvfb on $DISPLAY_NUM at $SIZE"
-Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp &
+# setsid plus closed inherited descriptors: without both, this script's caller
+# waits for these children even after the script itself has finished -- which
+# through `pct exec` means a terminal that never comes back.
+setsid Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp \
+    >>"$XVFB_LOG" 2>&1 </dev/null &
 XVFB_PID=$!
 echo "$XVFB_PID Xvfb" >> "$PIDFILE"
 sleep 2
@@ -234,7 +244,7 @@ echo "  $URL"
 # and a bare Xvfb has no window manager, so the request goes nowhere. --app
 # opens the page as its own chromeless window which the browser maps itself,
 # sized by --window-size. Pass --kiosk if the display does have a WM.
-DISPLAY="$DISPLAY_NUM" "$BROWSER" \
+DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" \
     $KIOSK_FLAGS \
     --no-sandbox \
     --no-zygote \
@@ -249,7 +259,7 @@ DISPLAY="$DISPLAY_NUM" "$BROWSER" \
     --window-position=0,0 \
     --user-data-dir="$PROFILE" \
     $APP_FLAG \
-    >>"$LOGFILE" 2>&1 &
+    >>"$LOGFILE" 2>&1 </dev/null &
 BROWSER_PID=$!
 echo "$BROWSER_PID $BROWSER" >> "$PIDFILE"
 echo "  pid $BROWSER_PID, log $LOGFILE"
