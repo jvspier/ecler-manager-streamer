@@ -62,9 +62,19 @@ Both are what `deploy/create-container.sh` sets, and both are deliberate:
   outbound TCP connections needs no capabilities at all — the systemd unit runs
   with an empty `CapabilityBoundingSet`.
 - **No nesting.** Nesting exists for running Docker/Podman or containers inside
-  the container. You are not doing that, and turning it on exposes the host's
+  the container. The manager does not, and turning it on exposes the host's
   `procfs` and `sysfs` to the guest — a real security trade for zero benefit.
   Try without it first.
+
+  **One real exception: a browser.** If you ever render pages in this container
+  — see [streaming.md](streaming.md) — it *does* need `nesting=1`. Chromium's
+  zygote clones with `CLONE_NEWUSER`, `CLONE_NEWPID` and `CLONE_NEWNET`, which
+  an unprivileged container blocks, and `--no-sandbox` does not help because
+  the process model uses those namespaces regardless. The symptom is specific
+  and misleading: a window appears, the browser is gone a second later, and the
+  log fills with dbus errors that have nothing to do with the cause. That is
+  also a reason to keep browser work on a machine that does nothing else,
+  rather than taking the nesting trade on a host shared with anything.
 
   Creating a Debian 13 container may print `WARN: Systemd 257 detected. You may
   need to enable nesting.` That is Proxmox hedging, not a failure — newer systemd
