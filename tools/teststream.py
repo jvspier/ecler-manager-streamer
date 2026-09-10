@@ -241,9 +241,18 @@ def manage(pidfile: Path, *, stop: bool) -> int:
 
 
 def build_command(args: argparse.Namespace) -> list[str]:
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel, "-re"]
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel]
 
     if args.capture_display:
+        # NOT -re here. x11grab is a live input that already paces itself at
+        # -framerate; -re asks ffmpeg to throttle reading to the input's own
+        # rate as well, and the two pacers fight over frame timing. ffmpeg's
+        # own documentation says not to use -re with a live input. The symptom
+        # is janky animation on the television while the encoder reports a
+        # healthy speed=1.0x, because the frames arrive uneven rather than
+        # late. A test pattern hides this -- testsrc's counter still ticks --
+        # which is why it only showed up on a real page.
+        #
         # Capture a rendered page.  build_command is only reached once the
         # display is known to have one on it.
         # -draw_mouse 0 keeps the X pointer out of the frame. Xvfb's
@@ -254,8 +263,9 @@ def build_command(args: argparse.Namespace) -> list[str]:
                 "-video_size", args.size, "-i", args.capture_display]
     else:
         # A test pattern with a moving element, so a frozen picture is
-        # distinguishable from a working one at a glance.
-        cmd += ["-f", "lavfi", "-i",
+        # distinguishable from a working one at a glance. lavfi generates as
+        # fast as it can, so this input does want -re to pace it.
+        cmd += ["-re", "-f", "lavfi", "-i",
                 f"testsrc=size={args.size}:rate={args.capture_fps}"]
 
     if args.audio:
@@ -300,7 +310,12 @@ def build_command(args: argparse.Namespace) -> list[str]:
     return cmd
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Split out of main() so tests can build a real argument namespace.
+
+    A test that hand-rolls an argparse.Namespace drifts from the parser the
+    moment an option is added, and then tests the wrong thing.
+    """
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     target = parser.add_mutually_exclusive_group()
@@ -363,7 +378,11 @@ def main(argv: list[str] | None = None) -> int:
                            help="stop a stream started with --detach")
     lifecycle.add_argument("--status", action="store_true",
                            help="report on a stream started with --detach")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     pidfile = Path(f"/tmp/teststream-{args.port}.pid")
 

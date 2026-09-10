@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import socket
 import struct
@@ -2147,6 +2148,44 @@ class TestDashboardSmoke(unittest.TestCase):
                                 text=True, timeout=60)
         self.assertEqual(result.returncode, 0,
                          msg=result.stdout + result.stderr)
+
+
+class TestStreamPacing(unittest.TestCase):
+    """-re belongs on a generated input and nowhere near a live capture.
+
+    Getting this wrong does not fail loudly: the encoder still reports
+    speed=1.0x and the test pattern still animates, but frames reach the
+    receiver unevenly and animation on a real page judders. It cost a round
+    trip to a television to spot, so it is pinned here.
+    """
+
+    @staticmethod
+    def _build(argv):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        import teststream
+
+        args = teststream.build_parser().parse_args(argv)
+        # main() settles where the pixels come from before calling
+        # build_command; mirror just that one assignment.
+        args.capture_display = args.from_display
+        return teststream.build_command(args)
+
+    def test_live_capture_is_not_paced_with_re(self):
+        cmd = self._build(["--group", "239.255.42.47",
+                           "--from-display", ":99"])
+        self.assertIn("x11grab", cmd)
+        self.assertNotIn("-re", cmd)
+
+    def test_generated_pattern_is_paced_with_re(self):
+        cmd = self._build(["--group", "239.255.42.47"])
+        self.assertIn("-re", cmd)
+        # and it pages the generator, not the encoder: -re precedes -i
+        self.assertLess(cmd.index("-re"), cmd.index("-i"))
+
+    def test_pointer_is_excluded_from_a_live_capture(self):
+        cmd = self._build(["--group", "239.255.42.47",
+                           "--from-display", ":99"])
+        self.assertEqual(cmd[cmd.index("-draw_mouse") + 1], "0")
 
 
 if __name__ == "__main__":
