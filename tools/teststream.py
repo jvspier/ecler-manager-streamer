@@ -97,19 +97,39 @@ def group_for_channel(channel: int, config_path: str | None) -> str | None:
     return address
 
 
-def address_of(interface: str) -> str | None:
-    """The first IPv4 address on an interface, without extra dependencies."""
+def addresses_of(interface: str) -> list[str]:
+    """Every IPv4 address on an interface, in the order the kernel lists them."""
     import subprocess
     try:
         out = subprocess.run(["ip", "-4", "-o", "addr", "show", "dev", interface],
                              capture_output=True, text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
-        return None
+        return []
+    found = []
     for line in out.splitlines():
         parts = line.split()
         if "inet" in parts:
-            return parts[parts.index("inet") + 1].split("/")[0]
-    return None
+            found.append(parts[parts.index("inet") + 1].split("/")[0])
+    return found
+
+
+def address_of(interface: str) -> str | None:
+    """An address to send from, complaining if the choice is ambiguous.
+
+    An interface can hold several addresses -- a manager container may keep a
+    second one for reaching devices on another subnet -- and which is "first"
+    depends on the order they were added, so it changes across reboots. Picking
+    silently would make the source address vary without anyone noticing.
+    """
+    found = addresses_of(interface)
+    if not found:
+        return None
+    if len(found) > 1:
+        print(f"! {interface} has {len(found)} addresses: {', '.join(found)}",
+              file=sys.stderr)
+        print(f"  Sending from {found[0]}. If that is the wrong subnet, name\n"
+              f"  the right one:  --local-addr <address>\n", file=sys.stderr)
+    return found[0]
 
 
 def warn_if_multihomed() -> None:
