@@ -49,6 +49,9 @@ die() { echo "✗ $*" >&2; exit 1; }
 step() { echo; echo "→ $*"; }
 
 PIDFILE="/run/pagesource-${DISPLAY_NUM#:}.pids"
+# The browser's own output is the only useful diagnostic when a page renders
+# black, so it is kept rather than discarded.
+LOGFILE="/tmp/pagesource-${DISPLAY_NUM#:}.log"
 
 case "$ACTION" in
 status)
@@ -58,11 +61,26 @@ status)
             if kill -0 "$pid" 2>/dev/null; then
                 echo "  $pid  $what  (running)"
             else
-                echo "  $pid  $what  (gone)"
+                echo "  $pid  $what  (GONE -- this is why the display is black)"
             fi
         done < "$PIDFILE"
     else
         echo "nothing recorded for $DISPLAY_NUM"
+    fi
+    if command -v xwininfo >/dev/null; then
+        echo
+        echo "windows on $DISPLAY_NUM:"
+        if DISPLAY="$DISPLAY_NUM" xwininfo -root -children 2>/dev/null \
+                | sed -n "/children:/,\$p" | sed "s/^/  /" | head -12; then :; fi
+        echo "  (no child windows means nothing is drawing)"
+    else
+        echo
+        echo "install x11-utils for a window list: apt-get install -y x11-utils"
+    fi
+    if [[ -f "$LOGFILE" ]]; then
+        echo
+        echo "last of $LOGFILE:"
+        tail -15 "$LOGFILE" | sed "s/^/  /"
     fi
     exit 0
     ;;
@@ -142,14 +160,46 @@ DISPLAY="$DISPLAY_NUM" "$BROWSER" \
     --window-size="$WIDTH,$HEIGHT" \
     --window-position=0,0 \
     --user-data-dir="/tmp/pagesource-${DISPLAY_NUM#:}" \
-    "$URL" >/dev/null 2>&1 &
+    "$URL" >>"$LOGFILE" 2>&1 &
 BROWSER_PID=$!
 echo "$BROWSER_PID $BROWSER" >> "$PIDFILE"
-sleep 4
-kill -0 "$BROWSER_PID" 2>/dev/null || { cleanup_on_failure; die "$BROWSER exited.
-  Try it in the foreground to see why:
-    DISPLAY=$DISPLAY_NUM $BROWSER --kiosk --no-sandbox '$URL'"; }
-echo "  pid $BROWSER_PID"
+echo "  pid $BROWSER_PID, log $LOGFILE"
+
+# A browser can survive its first seconds and still never draw, so wait for a
+# window rather than for the clock.
+step "Waiting for it to draw"
+drew=false
+for attempt in $(seq 1 20); do
+    if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
+        echo
+        echo "  the browser exited. Its output:"
+        tail -20 "$LOGFILE" 2>/dev/null | sed 's/^/    /'
+        cleanup_on_failure
+        die "$BROWSER did not stay running. Try it in the foreground:
+    DISPLAY=$DISPLAY_NUM $BROWSER --kiosk --no-sandbox '$URL'"
+    fi
+    if command -v xwininfo >/dev/null; then
+        if DISPLAY="$DISPLAY_NUM" xwininfo -root -children 2>/dev/null \
+                | grep -qE '^ +0x[0-9a-f]+'; then
+            drew=true
+            echo "  a window appeared after ${attempt}s"
+            break
+        fi
+    else
+        sleep 5
+        drew=true            # cannot check; assume and let the screenshot tell
+        echo "  install x11-utils to detect this properly; waited 5s"
+        break
+    fi
+    sleep 1
+done
+if [[ "$drew" == false ]]; then
+    echo
+    echo "  ! no window after 20s. The browser is running but not drawing."
+    echo "    Its output:"
+    tail -20 "$LOGFILE" 2>/dev/null | sed 's/^/      /'
+    echo "    Leaving it up so you can look; stop it with --stop."
+fi
 
 cat <<EOF
 
