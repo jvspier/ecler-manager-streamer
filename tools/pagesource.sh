@@ -132,6 +132,20 @@ cleanup_on_failure() {
     rm -f "$PIDFILE"
 }
 
+# A browser needs real memory. Being killed for the lack of it looks like a
+# mysterious crash -- a window appears, then the process is gone -- so check
+# before starting rather than after.
+AVAILABLE=$(awk '/MemAvailable/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 0)
+if [[ "$AVAILABLE" -gt 0 && "$AVAILABLE" -lt 900 ]]; then
+    die "only ${AVAILABLE} MB of memory is available.
+  A browser needs roughly 300-800 MB and will be killed part-way through
+  starting, which shows up as a window that appears and then vanishes.
+  In a Proxmox container:  pct set <ctid> -memory 4096"
+fi
+if [[ "$AVAILABLE" -gt 0 && "$AVAILABLE" -lt 1500 ]]; then
+    echo "! only ${AVAILABLE} MB available; a browser may be tight" >&2
+fi
+
 step "Starting Xvfb on $DISPLAY_NUM at $SIZE"
 Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp &
 XVFB_PID=$!
@@ -172,8 +186,15 @@ drew=false
 for attempt in $(seq 1 20); do
     if ! kill -0 "$BROWSER_PID" 2>/dev/null; then
         echo
-        echo "  the browser exited. Its output:"
+        echo "  the browser exited after ${attempt}s. Its output:"
         tail -20 "$LOGFILE" 2>/dev/null | sed 's/^/    /'
+        echo
+        echo "  Reading that log: 'Failed to connect to the bus' and"
+        echo "  'NameHasOwner' are dbus noise and harmless. What matters is"
+        echo "  anything about the zygote, or nothing at all -- both usually"
+        echo "  mean it was killed for memory. Check:"
+        echo "      free -m"
+        echo "      dmesg -T | grep -i 'oom\\|killed process'"
         cleanup_on_failure
         die "$BROWSER did not stay running. Try it in the foreground:
     DISPLAY=$DISPLAY_NUM $BROWSER --kiosk --no-sandbox '$URL'"
