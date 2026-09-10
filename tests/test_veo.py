@@ -2199,6 +2199,17 @@ class TestStreamPacing(unittest.TestCase):
         self.assertNotIn("-minrate", cmd)
         self.assertEqual(cmd[cmd.index("-muxrate") + 1], "0")
 
+    def test_a_dead_display_is_refused_before_ffmpeg_runs(self):
+        """The raw failure is unreadable, so catch it early."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        import teststream
+
+        # :77 has no socket under /tmp/.X11-unix, so it is refused.
+        self.assertFalse(teststream.display_is_live(":77"))
+        # A remote or otherwise non-numeric display is not ours to judge by a
+        # local socket, so it is allowed through to ffmpeg.
+        self.assertTrue(teststream.display_is_live("host:0"))
+
     def test_parse_bitrate_suffixes(self):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
         import teststream

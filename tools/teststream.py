@@ -170,6 +170,35 @@ def warn_if_multihomed() -> None:
               "  --interface <iface> to pin it.\n", file=sys.stderr)
 
 
+def display_is_live(display: str) -> bool:
+    """Is there an X server on this display that ffmpeg could read?
+
+    Cheap, and worth it: without this the failure is ffmpeg's
+    "Cannot open display :99, error 1" followed by "Error opening input
+    files: Input/output error", buried under a screenful of x264 statistics
+    from the previous run. Which does not tell you to restart the page.
+
+    The check is the unix socket the server listens on, not xdpyinfo: this
+    tool runs on minimal hosts where x11-utils may not be installed, and a
+    liveness check that quietly passes when its helper is missing is worse
+    than no check at all. xdpyinfo confirms it when present, because a
+    socket can outlive a server that was killed rather than asked to stop.
+    """
+    number = display.lstrip(":").split(".")[0]
+    if not number.isdigit():
+        return True                       # a remote or odd display; not ours
+    if not Path(f"/tmp/.X11-unix/X{number}").exists():
+        return False
+    try:
+        probe = subprocess.run(["xdpyinfo", "-display", display],
+                               capture_output=True, timeout=5)
+    except FileNotFoundError:
+        return True                       # socket is there; take it on trust
+    except subprocess.SubprocessError:
+        return False
+    return probe.returncode == 0
+
+
 def start_page(url: str, display: str, size: str) -> bool:
     """Render a page on a virtual display, via tools/pagesource.sh."""
     script = Path(__file__).resolve().parent / "pagesource.sh"
@@ -444,6 +473,15 @@ def main(argv: list[str] | None = None) -> int:
     # One flag settles where the pixels come from, so build_command does not
     # have to know how the display got its page.
     args.capture_display = args.from_display
+    if args.from_display and not args.dry_run:
+        if not display_is_live(args.from_display):
+            print(f"✗ nothing is running on {args.from_display}.\n"
+                  f"  Put a page on it first:\n"
+                  f"    bash tools/pagesource.sh --url <ADDRESS> "
+                  f"--display {args.from_display}\n"
+                  f"  or let this tool do both with --url <ADDRESS>.",
+                  file=sys.stderr)
+            return 2
     started_page = False
     if args.url:
         if not args.dry_run:
