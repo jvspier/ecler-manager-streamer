@@ -209,7 +209,9 @@ step "Starting Xvfb on $DISPLAY_NUM at $SIZE"
 # setsid plus closed inherited descriptors: without both, this script's caller
 # waits for these children even after the script itself has finished -- which
 # through `pct exec` means a terminal that never comes back.
-setsid Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp \
+# -nocursor: without it the X pointer sits in the middle of the framebuffer
+# and gets captured into the stream, so a wall screen shows a stray arrow.
+setsid Xvfb "$DISPLAY_NUM" -screen 0 "${SIZE}x24" -nolisten tcp -nocursor \
     >>"$XVFB_LOG" 2>&1 </dev/null &
 XVFB_PID=$!
 echo "$XVFB_PID Xvfb" >> "$PIDFILE"
@@ -255,6 +257,11 @@ echo "  $URL"
 #   --disable-dev-shm-usage  /dev/shm is small in a container
 #   --app=<url>          a chromeless window the browser maps itself, so no
 #                        window manager is needed (unlike --kiosk)
+#   --test-type          suppresses the yellow "you are using an unsupported
+#                        command-line flag: --no-sandbox" infobar, which
+#                        otherwise steals ~70px off the top of every frame.
+#                        Cosmetic only -- if the browser ever stops staying
+#                        up, drop this one first.
 #
 # setsid on the browser too, and this is the crux of it. Closing the inherited
 # descriptors stops the caller waiting, but the browser stays in the caller's
@@ -271,6 +278,7 @@ DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" \
     --no-zygote \
     --disable-gpu \
     --disable-dev-shm-usage \
+    --test-type \
     --window-size="$WIDTH,$HEIGHT" \
     --user-data-dir="$PROFILE" \
     $KIOSK_FLAGS \
