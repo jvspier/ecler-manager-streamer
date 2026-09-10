@@ -75,7 +75,8 @@ if [[ "$SOURCE_DIR" == "$APP_DIR" ]]; then
     echo "  already running from $APP_DIR, skipping copy"
 else
     # Copy code only; never the caller's config.json or event log.
-    for item in run.py README.md config.example.json devices.txt \
+    for item in run.py README.md LICENSE config.example.json \
+                devices.example.txt devices.txt docs \
                 eclermanager tools tests deploy; do
         if [[ -e "$SOURCE_DIR/$item" ]]; then
             cp -r "$SOURCE_DIR/$item" "$APP_DIR/"
