@@ -1,14 +1,22 @@
-# Idea for later: retiring the source PCs
+# Retiring the source PCs
 
-Not built, not tested. Notes and research on replacing the kiosk PCs that
-feed the transmitters — and possibly the transmitters themselves — with
-software streaming, kept so the thinking is not lost.
+Replacing the kiosk PCs that feed the transmitters — and possibly the
+transmitters themselves — with software streaming.
+
+**Proven on real hardware 2026-09-10**: a live receiver shows a real dashboard,
+streamed from a VM, and it looks like the hardware transmitter's output. See
+"CONFIRMED: a real dashboard streams" below for the working configuration and
+the five failure modes found on the way, each of which a test pattern hides.
+
+Not yet built: the service that would run this unattended. The tools here are
+`tools/pagesource.sh` and `tools/teststream.py`, both driven by hand.
 
 ---
 
-## Idea for later: retiring the ChromeBoxes
+## Retiring the ChromeBoxes
 
-Not built, not tested — notes so the thinking is not lost.
+The research and reasoning that led to the test above, kept because the
+trade-offs still apply when sizing the real thing.
 
 **Today.** Each of the four transmitters has a ChromeBox attached in kiosk mode,
 displaying a static dashboard URL over HDMI. The transmitter encodes that to
@@ -234,6 +242,83 @@ in principle both be replaced by software.
 Ecler's manual says a transmitter's output is receivable in VLC as
 `udp://@239.255.42.42:5004`, i.e. MPEG-TS over UDP multicast — which ffmpeg
 produces natively.
+
+### CONFIRMED: a real dashboard streams, and looks like the hardware transmitter
+
+Tested 2026-09-10 on a live VEO-XRI1C, from a Debian 13 VM. The working
+configuration, end to end:
+
+```
+tools/pagesource.sh --url '<dashboard url>'
+tools/teststream.py --channel 5 --local-addr <ip on the TV VLAN> \
+    --from-display :99 --capture-fps 30 --fps 30 \
+    --bitrate 6M --no-bframes --detach
+```
+
+Steady state: `q=18.0`, `bitrate=6899 kbits/s` flat, `speed=0.999x`, 0.61 CPU
+cores and ~700 MiB of memory for the whole chain (browser, Xvfb, encoder).
+
+**Five things were wrong before it looked right, and every one of them was
+found by measuring rather than reasoning.** They are listed because each
+failure mode is invisible in a test pattern.
+
+**1. `-re` must never be applied to a live capture.** x11grab already paces
+itself at `-framerate`; `-re` adds a second pacer and the two fight over frame
+timing. ffmpeg's own documentation says not to use it with a live input. The
+symptom is judder on the television while the encoder reports a perfectly
+healthy `speed=1.0x`, because frames are uneven rather than late.
+
+**2. Chromium sleeps when it thinks nobody is watching.** Under a bare Xvfb
+there is no window manager or compositor to tell it otherwise, so it
+backgrounds its own renderer: measured at **0% CPU** while a slideshow with
+crossfades was supposedly animating. Needs
+`--disable-renderer-backgrounding`, `--disable-backgrounding-occluded-windows`
+and `--disable-background-timer-throttling`. Verify in `top` -- the browser
+must show real CPU while the page animates.
+
+**3. A dashboard is nearly static, so the bitrate collapses and then bursts.**
+Left alone the encoder spent **1.76 Mbit/s of a 10M cap** and then had to
+burst on every slide transition, which is the worst case for a hardware
+decoder. `nal-hrd=cbr` pads the elementary stream and `-muxrate` pads the
+transport stream, giving a constant arrival rate whatever the picture does.
+
+**4. The pointer is captured unless excluded at the capture.** Xvfb
+`-nocursor` does *not* work: it suppresses only the server's default root
+cursor, and the browser sets its own cursor on its own window. Use ffmpeg's
+`-draw_mouse 0`.
+
+**5. Photographic slides tore, and it was a conformance limit.** Two of the
+dashboard's slides tore consistently, both photographic; the flat graphic ones
+never did. Content-dependent, not time-dependent.
+
+The stream was proven innocent first: a 110 MB capture taken straight off the
+wire with `-c copy` decoded with **zero errors** offline. (The
+`non-existing PPS 0 referenced` lines that appear during such a capture are
+just the cost of joining mid-GOP before the first keyframe, and never recur.)
+
+The cause: a constant-rate budget far exceeds what flat graphics need, so
+x264 falls to near-lossless -- `q=2.0` measured -- and on a photographic
+slide that produces a keyframe of one to two megabytes, larger than the
+biggest single coded frame H.264 level 4.0 permits. The stream declares level
+4.0, so a decoder that sizes its buffers from the declared level truncates
+the frame. With 98.5% of macroblocks skipped on a static slide nothing
+repairs the damage until the next keyframe, which is oversized in exactly the
+same way -- hence a torn band that persists for the whole slide rather than
+clearing in a second.
+
+`-qmin 18` fixes it, and is visually lossless for text and graphics at 1080p.
+
+**A consequence worth knowing: quality and bitrate are now decoupled.** With
+`q` sitting at the floor, the encoder would spend more bits if it were
+allowed, so everything above what the picture needs becomes null padding.
+`--qmin` sets the quality; `--bitrate` only sets the constant wire rate. 4M
+gives the same picture as 6M, which matters when four streams run at once.
+
+**The test pattern hid every one of these.** `testsrc` changes every pixel of
+every frame, so it sits at the bitrate cap, produces a constant-rate
+transport stream by accident, has no photographic content and needs no
+browser at all. It proves the receiver locks on. It proves nothing about
+whether a dashboard will look right.
 
 ### CONFIRMED: a receiver does lock onto a software stream
 
