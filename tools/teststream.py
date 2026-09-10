@@ -328,6 +328,15 @@ def build_command(args: argparse.Namespace) -> list[str]:
         "-r", str(args.fps),
     ]
 
+    if args.no_bframes:
+        # B-frames make the decoder hold and reorder frames. A hardware IP
+        # decoder of this class is built for what the matching hardware
+        # transmitter sends -- low latency, no reordering -- and x264's
+        # defaults are the opposite: measured 12698 B-frames in a ten minute
+        # run, 95% of them in runs of three or more. Worth trying whenever
+        # the picture is unstable and the network is not losing packets.
+        cmd += ["-bf", "0"]
+
     if not args.vbr:
         # Constant rate, and this matters more than it looks.
         #
@@ -428,6 +437,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="keyframe interval in seconds. This is also the "
                              "channel-switch latency (default 1.5)")
     parser.add_argument("--bitrate", default="6M")
+    parser.add_argument("--no-bframes", action="store_true",
+                        help="encode without B-frames. Removes decoder-side "
+                             "frame reordering, which is what the hardware "
+                             "transmitters avoid; try this if the picture is "
+                             "unstable and the network is clean")
     parser.add_argument("--vbr", action="store_true",
                         help="let the bitrate vary instead of padding to a "
                              "constant rate. Smaller on the wire, but a "
