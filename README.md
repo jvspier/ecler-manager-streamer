@@ -181,6 +181,7 @@ eclermanager/auth.py        password hashing and signed session cookies
 eclermanager/static/        the dashboard and login page
 deploy/                     systemd units, install and update scripts
 tools/                      see docs/usage.md and docs/troubleshooting.md
+tests/smoke_dashboard.js    runs the dashboard's JS against a stubbed DOM
 tests/test_veo.py           188 tests, no hardware needed
 ```
 

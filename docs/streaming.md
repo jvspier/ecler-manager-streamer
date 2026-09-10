@@ -367,8 +367,53 @@ hand: the UDP payload is set to **1316 bytes** (7 x 188). MPEG-TS packets are
 188 bytes and ffmpeg's default 1472-byte payload is not a multiple of that —
 exactly the sort of thing a cheap decoder refuses to parse.
 
-**Step 4 — only if a test pattern works**, try a real page: run Xvfb plus a
-kiosk browser on display `:99` and add `--url` to capture it instead.
+**Step 4 — capture a real page instead of a test pattern.** `tools/pagesource.sh`
+is the other half: it renders a page on a virtual display, and `--url` makes
+`teststream.py` capture that display rather than generate a pattern.
+
+```bash
+apt-get install -y xvfb chromium
+bash /opt/eclermanager/tools/pagesource.sh --url https://your-dashboard/
+```
+
+Nothing appears on a physical output — Xvfb is a framebuffer in memory. Check
+what actually rendered *before* streaming it anywhere, because a page that has
+not finished loading, or one showing a login screen, looks identical to a
+working one from the outside:
+
+```bash
+apt-get install -y imagemagick
+DISPLAY=:99 import -window root /tmp/page.png
+```
+
+Look at that PNG. Then capture it:
+
+```bash
+python3 /opt/eclermanager/tools/teststream.py \
+    --channel 5 --interface eth1 --url --display :99
+```
+
+Stop the browser and display when done:
+
+```bash
+bash /opt/eclermanager/tools/pagesource.sh --stop
+```
+
+**What to look for on the TV**, beyond "is it there":
+
+- **Text sharpness.** 1080p H.264 at a few Mbps is unkind to thin fonts. If a
+  dashboard's small text looks soft, raising the bitrate helps more than raising
+  the framerate.
+- **Fade smoothness**, if the page animates between slides. 5 fps gives a
+  one-second fade five steps; lengthening the CSS transition costs nothing and
+  helps more than a higher capture rate.
+- **Colour.** Xvfb at 24-bit into 8-bit 4:2:0 can shift saturated brand colours
+  slightly. Usually invisible; worth a look on a page that is mostly one colour.
+
+The browser flags in `pagesource.sh` are chosen for a container: `--no-sandbox`
+because an unprivileged LXC cannot use Chromium's sandbox, `--disable-gpu` and
+`--disable-dev-shm-usage` because there is no GPU and `/dev/shm` is small, and
+`--kiosk` plus the various `--disable-*` so nothing is drawn over the page.
 
 ### Sizing, if it works
 
