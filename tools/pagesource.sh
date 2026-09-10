@@ -256,9 +256,17 @@ echo "  $URL"
 #   --app=<url>          a chromeless window the browser maps itself, so no
 #                        window manager is needed (unlike --kiosk)
 #
-# No setsid on the browser: it is not needed once its descriptors are closed,
-# and it was another difference from the command known to work.
-DISPLAY="$DISPLAY_NUM" "$BROWSER" \
+# setsid on the browser too, and this is the crux of it. Closing the inherited
+# descriptors stops the caller waiting, but the browser stays in the caller's
+# process group -- so when that session ends, whether by Ctrl-C or simply by
+# the `pct exec` finishing, the signal reaches the browser and it dies.
+#
+# The symptom was thoroughly misleading: "a window appeared after 2s", the
+# script reporting success, and a display that was black by the time anyone
+# looked, with a log full of dbus noise and no cause in it. The browser had
+# never crashed at all. setsid puts it in its own session, where the terminal
+# cannot reach it.
+DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" \
     --no-sandbox \
     --no-zygote \
     --disable-gpu \
