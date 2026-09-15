@@ -1,8 +1,17 @@
 # Installed to /etc/sudoers.d/eclerstreamer, mode 0440.
 #
-# The web UI's only privilege: start, stop and restart its own stream units.
-# Narrow on purpose -- the wildcard covers dashboard-stream@<channel> and
-# nothing else, so a bug in the service cannot reach another unit.
-eclerstreamer ALL=(root) NOPASSWD: /usr/bin/systemctl start dashboard-stream@*.service, \
-                                   /usr/bin/systemctl stop dashboard-stream@*.service, \
-                                   /usr/bin/systemctl restart dashboard-stream@*.service
+# The web UI's only privilege: managing its own stream units. Narrow on
+# purpose -- the wildcard covers dashboard-stream@<channel> and nothing else,
+# so a bug in the service cannot reach another unit.
+#
+# enable/disable are here as well as start/stop because "enabled" has to mean
+# one thing. A dashboard switched on in the UI must also come back after a
+# reboot, or the two senses of the word drift apart and someone finds out
+# the hard way.
+Cmnd_Alias ECLER_STREAMS = /usr/bin/systemctl start dashboard-stream@*.service, \
+                           /usr/bin/systemctl stop dashboard-stream@*.service, \
+                           /usr/bin/systemctl restart dashboard-stream@*.service, \
+                           /usr/bin/systemctl enable dashboard-stream@*.service, \
+                           /usr/bin/systemctl disable dashboard-stream@*.service
+
+eclerstreamer ALL=(root) NOPASSWD: ECLER_STREAMS

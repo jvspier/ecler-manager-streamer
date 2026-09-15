@@ -66,9 +66,17 @@ class TestControl(unittest.TestCase):
         self.assertEqual(control.unit_for(5), "dashboard-stream@5.service")
 
     def test_only_known_verbs_are_accepted(self):
-        """The sudo rule allows three verbs; nothing else should reach it."""
+        """The sudo rule allows five verbs; nothing else should reach it."""
         with self.assertRaises(ValueError):
             control.act(5, "mask")
+
+    def test_enable_is_allowed_so_a_stream_survives_a_reboot(self):
+        self.assertIn("enable", control.ALLOWED)
+        self.assertIn("disable", control.ALLOWED)
+
+    def test_status_reports_boot_state_separately_from_running(self):
+        """Running now and starting at boot are different questions."""
+        self.assertIn("at_boot", control.status(5))
 
 
 class TestRunner(unittest.TestCase):
@@ -161,6 +169,13 @@ class TestHttp(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self._post("/api/dashboards", {"channel": 5})
         self.assertEqual(caught.exception.code, 409)
+
+    def test_host_settings_are_writable(self):
+        """local_addr is the commonest silent failure; it belongs in the UI."""
+        self._post("/api/config", {"local_addr": "10.52.21.201", "qmin": 20})
+        cfg = config_mod.load(self.path)
+        self.assertEqual(cfg.local_addr, "10.52.21.201")
+        self.assertEqual(cfg.qmin, 20)
 
     def test_unknown_channel_is_a_404(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:

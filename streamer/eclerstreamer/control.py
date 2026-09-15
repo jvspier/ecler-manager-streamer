@@ -16,11 +16,14 @@ UNIT_TEMPLATE = "dashboard-stream@{channel}.service"
 
 # Only ever these, and only ever on our own template. The service account's
 # sudo rule is written to match, so a bug here cannot reach another unit.
-ALLOWED = ("start", "stop", "restart")
+ALLOWED = ("start", "stop", "restart", "enable", "disable")
 
 _SHOW_FIELDS = (
     "ActiveState", "SubState", "Result", "MainPID",
     "ExecMainStartTimestamp", "NRestarts",
+    # Whether it comes back after a reboot, which is a different question
+    # from whether it is running now, and the one people forget to ask.
+    "UnitFileState",
 )
 
 
@@ -37,7 +40,7 @@ def status(channel: int) -> dict:
     """What systemd thinks of one channel's unit."""
     if not available():
         return {"available": False, "active": "unknown", "sub": "",
-                "since": "", "restarts": 0, "pid": 0}
+                "since": "", "restarts": 0, "pid": 0, "at_boot": False}
 
     unit = unit_for(channel)
     args = ["systemctl", "show", unit]
@@ -49,7 +52,7 @@ def status(channel: int) -> dict:
     except subprocess.SubprocessError as exc:
         log.warning("systemctl show %s failed: %s", unit, exc)
         return {"available": True, "active": "unknown", "sub": "",
-                "since": "", "restarts": 0, "pid": 0}
+                "since": "", "restarts": 0, "pid": 0, "at_boot": False}
 
     values = dict(
         line.split("=", 1) for line in out.splitlines() if "=" in line)
@@ -61,6 +64,7 @@ def status(channel: int) -> dict:
         "since": values.get("ExecMainStartTimestamp", ""),
         "restarts": int(values.get("NRestarts") or 0),
         "pid": int(values.get("MainPID") or 0),
+        "at_boot": values.get("UnitFileState", "") == "enabled",
     }
 
 

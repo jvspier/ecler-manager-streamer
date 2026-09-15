@@ -223,6 +223,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/logout":
                 return self._redirect("/login", cookie=self.auth.clear_cookie_header())
+            if path == "/api/config":
+                return self._update_config()
             if path == "/api/dashboards":
                 return self._add_dashboard()
             route = _DASHBOARD_ROUTE.match(path)
@@ -239,6 +241,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "server error")
 
     # --- handlers --------------------------------------------------------
+    def _update_config(self) -> None:
+        body = self._read_json_body()
+        with self.lock:
+            cfg = self._load()
+            for key in ("local_addr", "interface", "manager_url"):
+                if key in body:
+                    setattr(cfg, key, str(body[key] or "").strip())
+            if "qmin" in body and body["qmin"] is not None:
+                cfg.qmin = max(0, int(body["qmin"]))
+            if "no_bframes" in body:
+                cfg.no_bframes = bool(body["no_bframes"])
+            cfg.save()
+        self._send_json({"ok": True})
+
     def _add_dashboard(self) -> None:
         body = self._read_json_body()
         try:

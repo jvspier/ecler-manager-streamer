@@ -112,6 +112,7 @@
 <header class="top">
   <h1>Ecler Streamer<small id="clock"></small></h1>
   <div class="spacer"></div>
+  <button id="host">Host settings</button>
   <button id="add">Add dashboard</button>
   <button id="refresh" class="primary">Refresh</button>
   <form id="signout" method="post" action="/logout" hidden style="margin:0">
@@ -120,6 +121,29 @@
 </header>
 
 <main>
+  <div class="card" id="host-panel" hidden style="margin-bottom:14px">
+    <div class="title">Host settings</div>
+    <div class="settings">
+      <div style="grid-column:1/-1">
+        <label for="local_addr">This host's address on the TV VLAN</label>
+        <input id="local_addr" placeholder="10.52.21.200">
+        <div class="sub" style="margin-top:5px;white-space:normal">
+          Without it, multicast leaves by the default route — the management
+          VLAN — and no receiver ever sees the stream. There is no error
+          anywhere when this is wrong; the screens simply say "waiting for
+          connection".
+        </div>
+      </div>
+      <div><label for="qmin">Quality floor (qmin)</label>
+        <input id="qmin" placeholder="18"></div>
+      <div><label for="manager_url">Manager URL (optional)</label>
+        <input id="manager_url" placeholder="http://10.0.0.1:8477"></div>
+      <div class="row" style="grid-column:1/-1">
+        <button data-act="save-host">Save host settings</button>
+        <span class="sub">Restart a stream to apply.</span>
+      </div>
+    </div>
+  </div>
   <div class="grid" id="cards"><div class="empty">Loading…</div></div>
 </main>
 <div id="toasts"></div>
@@ -182,6 +206,9 @@ function statusChips(dash) {
     chips.push('<span class="chip warn">stopped</span>');
   }
   if (s.restarts) chips.push(`<span class="chip warn">${s.restarts} restarts</span>`);
+  if (dash.enabled && !s.at_boot) {
+    chips.push('<span class="chip warn">not after a reboot</span>');
+  }
   return chips.join("");
 }
 
@@ -251,6 +278,7 @@ function render() {
   } else {
     cards.replaceChildren(...list.map(card));
   }
+  if (!document.getElementById("host-panel").hidden) fillHost();
   const when = new Date(state.data.server_time * 1000);
   document.getElementById("clock").textContent =
     `${list.length} dashboard(s) · ${when.toLocaleTimeString()}`
@@ -279,6 +307,19 @@ document.addEventListener("click", async (event) => {
   const channel = Number(button.dataset.ch);
   const action = button.dataset.act;
 
+  if (action === "save-host") {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({
+        local_addr: document.getElementById("local_addr").value.trim(),
+        manager_url: document.getElementById("manager_url").value.trim(),
+        qmin: Number(document.getElementById("qmin").value || 18),
+      })});
+      clearDrafts("local_addr"); clearDrafts("manager_url"); clearDrafts("qmin");
+      toast("Host settings saved. Restart a stream to apply.", "ok");
+      await load();
+    } catch (err) { toast(err.message, "bad"); }
+    return;
+  }
   if (action === "toggle") {
     if (state.open.has(channel)) state.open.delete(channel);
     else state.open.add(channel);
@@ -301,10 +342,19 @@ document.addEventListener("click", async (event) => {
       clearDrafts(`name-${channel}`); clearDrafts(`bitrate-${channel}`);
       clearDrafts(`capture-${channel}`); clearDrafts(`fps-${channel}`);
       toast(`Channel ${channel}: settings saved. Restart to apply.`, "ok");
-    } else if (action === "enable" || action === "disable") {
-      await act(channel, null, { enabled: action === "enable" });
-      if (action === "disable") await act(channel, "stop").catch(() => {});
-      toast(`Channel ${channel} ${action}d`, "ok");
+    } else if (action === "enable") {
+      // One word, one meaning: on in the config, running now, and running
+      // again after a reboot. Leaving those three apart is how a dashboard
+      // quietly fails to come back.
+      await act(channel, null, { enabled: true });
+      await act(channel, "enable");
+      await act(channel, "start");
+      toast(`Channel ${channel} enabled and started`, "ok");
+    } else if (action === "disable") {
+      await act(channel, null, { enabled: false });
+      await act(channel, "stop").catch(() => {});
+      await act(channel, "disable").catch(() => {});
+      toast(`Channel ${channel} disabled and stopped`, "ok");
     } else if (action === "delete") {
       if (!confirm(`Delete the dashboard on channel ${channel}?\n\n`
                  + "Its stream is stopped and the screens showing it go to "
@@ -324,6 +374,21 @@ document.addEventListener("click", async (event) => {
     toast(`Channel ${channel}: ${err.message}`, "bad");
   }
 });
+
+document.getElementById("host").addEventListener("click", () => {
+  const panel = document.getElementById("host-panel");
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden && state.data) fillHost();
+});
+
+function fillHost() {
+  const cfg = state.data.config || {};
+  for (const [id, value] of Object.entries({
+        local_addr: cfg.local_addr, qmin: cfg.qmin, manager_url: cfg.manager_url })) {
+    const input = document.getElementById(id);
+    if (input && state.draft[id] === undefined) input.value = value ?? "";
+  }
+}
 
 document.getElementById("refresh").addEventListener("click", load);
 document.getElementById("add").addEventListener("click", async () => {
