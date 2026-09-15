@@ -101,7 +101,7 @@
   /* Centred, and the margin lives here rather than inline: an inline style
      would win over these rules and pin it to the left edge. */
   #host-panel { max-width: 680px; margin: 0 auto 14px; }
-  #host-panel .hint { font-family: var(--sans); font-size: 11.5px;
+  .hint { font-family: var(--sans); font-size: 11.5px;
                       color: var(--muted); white-space: normal; margin-top: 5px; }
   [hidden] { display: none !important; }
 
@@ -272,7 +272,9 @@ function card(dash) {
       <div><label for="bitrate-${dash.channel}">Bitrate</label>
         <input id="bitrate-${dash.channel}" value="${esc(draftOr("bitrate-" + dash.channel, dash.bitrate))}"></div>
       <div><label for="capture-${dash.channel}">Capture fps</label>
-        <input id="capture-${dash.channel}" value="${esc(draftOr("capture-" + dash.channel, dash.capture_fps))}"></div>
+        <input id="capture-${dash.channel}" value="${esc(draftOr("capture-" + dash.channel, dash.capture_fps))}">
+        <div class="hint">Match the output rate for an animated page. Lower it
+          only for a still one — it caps how smooth motion can be.</div></div>
       <div><label for="fps-${dash.channel}">Output fps</label>
         <input id="fps-${dash.channel}" value="${esc(draftOr("fps-" + dash.channel, dash.fps))}"></div>
       <div class="row" style="grid-column:1/-1">

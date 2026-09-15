@@ -38,9 +38,12 @@ class Dashboard:
     url: str = ""
     enabled: bool = True
     display: int | None = None
-    # Capture below output rate is deliberate for a mostly-static page: there
-    # is nothing to sample 30 times a second, and it halves the browser's work.
-    capture_fps: float = 15.0
+    # Matches the output rate by default. Capturing below it is a real saving
+    # on a static page -- nothing to sample 30 times a second -- but it caps
+    # how smooth animation can be, and a first dashboard that judders reads as
+    # a broken tool rather than as a setting to tune. Correct by default,
+    # optimised deliberately.
+    capture_fps: float = 30.0
     fps: int = 30
     bitrate: str = "6M"
     size: str = "1920x1080"
