@@ -25,6 +25,11 @@ EnvironmentFile=-/etc/eclerstreamer/eclerstreamer.env
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
+# ProtectSystem=full mounts /etc read-only, and this service writes its own
+# config there every time a dashboard is edited. Carving out the one
+# directory keeps the rest of /etc protected; dropping to ProtectSystem=true
+# would open all of it.
+ReadWritePaths=/etc/eclerstreamer
 
 [Install]
 WantedBy=multi-user.target
