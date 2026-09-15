@@ -301,7 +301,9 @@ def build_command(args: argparse.Namespace) -> list[str]:
         # To a file rather than the journal, so the web UI can read the
         # encoder's own numbers instead of inferring health from "the process
         # is alive". ffmpeg truncates this on open, so it resets every restart
-        # and cannot grow without bound.
+        # and cannot grow without bound -- which also means the card has
+        # nothing to show until the first period elapses, hence 10s rather
+        # than something longer.
         cmd += ["-nostats", "-progress", args.progress_file,
                 "-stats_period", str(args.stats_seconds)]
     elif not sys.stdout.isatty():
@@ -529,10 +531,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--progress-file", default=None, metavar="PATH",
                         help="write ffmpeg's progress here as key=value "
                              "lines, for something else to read")
-    parser.add_argument("--stats-seconds", type=float, default=30.0,
+    parser.add_argument("--stats-seconds", type=float, default=10.0,
                         metavar="N",
                         help="how often to report progress when not on a "
-                             "terminal (default 30). Needs ffmpeg 5.0+")
+                             "terminal (default 10). Needs ffmpeg 5.0+")
     parser.add_argument("--no-pacing", action="store_true",
                         help="do not pace the bytes onto the wire. ffmpeg "
                              "otherwise writes a whole frame's packets back "
