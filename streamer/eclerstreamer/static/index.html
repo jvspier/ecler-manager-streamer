@@ -110,7 +110,10 @@
            box-shadow: 0 12px 34px rgba(0,0,0,.5); }
   .toast.ok { border-left-color: var(--ok); }
   .toast.bad { border-left-color: var(--bad); }
-  .empty { color: var(--muted); padding: 34px; text-align: center; }
+  /* It lives in the card grid, so without this it sits in the first column
+     and reads as left-aligned under a 340px track. */
+  .empty { color: var(--muted); padding: 34px; text-align: center;
+           grid-column: 1 / -1; }
 </style>
 </head>
 <body>
