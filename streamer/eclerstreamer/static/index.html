@@ -98,7 +98,9 @@
                                text-decoration: underline; text-underline-offset: 3px; }
   /* A settings form does not want to be 2000px wide, and prose does not want
      to be monospace -- that face is for addresses and numbers. */
-  #host-panel { max-width: 680px; }
+  /* Centred, and the margin lives here rather than inline: an inline style
+     would win over these rules and pin it to the left edge. */
+  #host-panel { max-width: 680px; margin: 0 auto 14px; }
   #host-panel .hint { font-family: var(--sans); font-size: 11.5px;
                       color: var(--muted); white-space: normal; margin-top: 5px; }
   [hidden] { display: none !important; }
@@ -129,7 +131,7 @@
 </header>
 
 <main>
-  <div class="card" id="host-panel" hidden style="margin-bottom:14px">
+  <div class="card" id="host-panel" hidden>
     <div class="title">Host settings</div>
     <div class="settings">
       <div style="grid-column:1/-1">
