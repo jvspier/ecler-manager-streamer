@@ -55,8 +55,18 @@ const STATE = {
 function element(id) {
   const node = {
     id, value: "", textContent: "", innerHTML: "", hidden: false,
-    className: "", style: {}, dataset: {}, files: [], disabled: false,
+    className: "", dataset: {}, files: [], disabled: false,
     title: "", checked: false,
+    // style needs setProperty/getPropertyValue: the dashboard sets CSS custom
+    // properties (--ch, --seg) to carry channel colour down to the cards, and
+    // a bare {} silently lacks them until it throws at runtime.
+    style: {
+      _props: {},
+      setProperty(name, value) { this._props[name] = value; },
+      getPropertyValue(name) { return this._props[name] ?? ""; },
+      removeProperty(name) { delete this._props[name]; },
+    },
+    scrollIntoView() {},
     appendChild() {}, append() {}, remove() {}, replaceChildren() {},
     addEventListener() {}, setAttribute() {},
     getAttribute() { return "false"; },
@@ -74,6 +84,8 @@ global.document = {
   querySelectorAll: () => [],
   addEventListener: () => {},
 };
+// CSS.escape is used when looking a card up by id for the signal bar.
+global.CSS = { escape: (value) => String(value).replace(/["\\]/g, "\\$&") };
 global.window = global;
 global.location = { search: "", href: "" };
 global.localStorage = { getItem: () => null, setItem: () => {} };

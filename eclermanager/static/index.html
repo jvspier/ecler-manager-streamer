@@ -5,79 +5,188 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ecler VEO Manager</title>
 <style>
+  /* Ecler VEO Manager — a control surface for a wall of screens.
+     Two colour vocabularies that never share a slot:
+       identity (which channel)  -> --ch, on left edges and number badges
+       state    (is it working)  -> --ok/--warn/--bad, on dots and chips
+     And one typographic rule: monospace is what the machine reports
+     (channels, addresses, timestamps), sans is what a person wrote. */
   :root {
-    color-scheme: light dark;
-    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
-    --text: #e6e9ef; --muted: #99a1b3;
-    --accent: #4c8dff; --ok: #35c07f; --warn: #e8b339; --bad: #ef5d5d;
-    --radius: 10px;
+    color-scheme: dark;
+
+    --ground:    #0B111E;
+    --surface:   #131B2D;
+    --raised:    #1B2440;
+    --line:      #27324F;
+    --line-soft: #1E2841;
+    --text:      #E9EDF7;
+    --muted:     #8593B0;
+
+    --ok:   #35C07F;
+    --warn: #FFB13D;
+    --bad:  #FF4D6A;
+
+    /* Channel identity. Set per group by channelHue(); cards inherit it. */
+    --ch: #4DA3FF;
+
+    --r-card: 12px;
+    --r-ctl: 8px;
+    --r-pill: 999px;
+
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  }
-  @media (prefers-color-scheme: light) {
-    :root { --bg:#f4f6fa; --panel:#fff; --panel-2:#f0f2f7; --line:#dde1ea;
-            --text:#161a22; --muted:#5d6577; }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
 
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--text);
+    font: 14px/1.45 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 2px solid var(--ch); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  /* --- header ---------------------------------------------------------- */
   header.top {
-    position: sticky; top: 0; z-index: 20; background: var(--panel);
-    border-bottom: 1px solid var(--line); padding: 11px 18px;
-    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    position: sticky; top: 0; z-index: 20;
+    background: linear-gradient(var(--surface), var(--surface)) padding-box;
+    border-bottom: 1px solid var(--line);
+    padding: 10px 18px 0;
+    display: flex; flex-direction: column; gap: 9px;
   }
-  h1 { font-size: 15.5px; margin: 0; font-weight: 650; letter-spacing: .2px; }
-  h1 small { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 11.5px; }
-  .stats { display: flex; gap: 6px; flex-wrap: wrap; }
+  .top-row {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  }
+  .top-row.controls { padding-bottom: 9px; }
+  h1 {
+    font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -.1px;
+  }
+  h1 small {
+    color: var(--muted); font-weight: 400; margin-left: 9px;
+    font-size: 11.5px; font-family: var(--mono);
+  }
+  .spacer { flex: 1 1 auto; }
+
+  /* The building at a glance: one segment per receiver, coloured by the
+     channel it belongs to, red when it needs attention. */
+  .signalbar {
+    display: flex; gap: 2px; align-items: flex-end;
+    height: 11px; width: 100%; min-width: 0;
+  }
+  .signalbar .seg {
+    flex: 1 1 0; min-width: 2px; border-radius: 2px;
+    background: var(--seg, var(--line));
+    height: 5px; opacity: .5; cursor: pointer;
+    transition: height .12s, opacity .12s;
+  }
+  .signalbar .seg:hover { opacity: 1; height: 11px; }
+  /* A fault is a spike, not merely a different colour. Hue alone would not
+     do: amber-for-warning sits right next to amber-for-channel-1, and this
+     bar is the one place the identity and state palettes share a slot.
+     Height separates them whatever the channel colours happen to be. */
+  .signalbar .seg.warn { background: var(--warn); opacity: 1; height: 11px; }
+  .signalbar .seg.bad  { background: var(--bad);  opacity: 1; height: 11px; }
+  .signalbar .seg.off  { background: var(--line); opacity: .7; }
+
+  .stats { display: flex; gap: 5px; flex-wrap: wrap; }
   .stat {
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
-    padding: 3px 10px; font-size: 11.5px; color: var(--muted); white-space: nowrap;
+    background: var(--raised); border: 1px solid var(--line-soft);
+    border-radius: var(--r-pill); padding: 3px 11px;
+    font-size: 11.5px; color: var(--muted); white-space: nowrap;
   }
-  .stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .stat b {
+    color: var(--text); font-family: var(--mono);
+    font-variant-numeric: tabular-nums; font-weight: 600;
+  }
   .stat.alert { border-color: var(--warn); color: var(--warn); }
   .stat.alert b { color: var(--warn); }
   .stat.bad { border-color: var(--bad); color: var(--bad); }
   .stat.bad b { color: var(--bad); }
-  .spacer { flex: 1 1 auto; }
+
+  label.ctl { font-size: 11.5px; color: var(--muted); }
+  .sep {
+    width: 1px; align-self: stretch; background: var(--line-soft);
+    margin: 2px 3px;
+  }
+
+  /* --- controls: tiered, so they stop reading as one undifferentiated row */
+  button {
+    font: inherit; font-size: 12px; color: var(--muted);
+    background: transparent; border: 1px solid var(--line);
+    border-radius: var(--r-ctl); padding: 5px 11px; cursor: pointer;
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  button.primary {
+    color: #08101E; background: var(--ch); border-color: var(--ch);
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) {
+    color: #08101E; filter: brightness(1.12); border-color: var(--ch);
+  }
+  button.warn {
+    color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+  }
+  button.warn:hover:not(:disabled) { color: var(--warn); border-color: var(--warn); }
+  button.quiet { border-color: transparent; padding: 5px 8px; }
+  button.quiet:hover:not(:disabled) { border-color: var(--line); }
+
   header.top a {
     font-size: 12px; color: var(--muted); text-decoration: none;
-    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px;
+    border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 5px 11px;
+    transition: color .12s, border-color .12s;
   }
-  header.top a:hover { border-color: var(--accent); color: var(--accent); }
-  label.ctl { font-size: 11.5px; color: var(--muted); }
-  header.top select {
-    font: inherit; font-size: 12px; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); border-radius: 8px; padding: 4px 7px;
+  header.top a:hover { border-color: var(--muted); color: var(--text); }
+
+  select {
+    font: inherit; font-size: 11.5px; background: var(--raised); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px;
+    max-width: 100%;
   }
+  header.top select { font-size: 12px; border-radius: var(--r-ctl); padding: 5px 8px; }
 
-  button {
-    font: inherit; color: var(--text); background: var(--panel-2);
-    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px;
-    cursor: pointer; transition: border-color .12s, background .12s;
-  }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.warn { border-color: var(--warn); color: var(--warn); }
+  main { padding: 18px 18px 48px; }
 
-  main { padding: 16px 18px 40px; }
+  /* Not channels, so they do not take a channel's colour. */
+  #setup-panel { --ch: #2FD9A8; }
+  #found { --ch: #FFB13D; }
+  #disabled { --ch: #5A6683; }
 
-  /* --- one section per transmitter ------------------------------------ */
-  section.group { margin-bottom: 26px; }
-  button.group-head {
+  /* --- one section per channel ----------------------------------------- */
+  section.group { margin-bottom: 24px; }
+  button.group-head, div.group-head {
     display: flex; align-items: center; gap: 11px; width: 100%;
-    margin: 0 0 10px; padding: 0 0 8px; text-align: left;
-    background: none; border: none; border-bottom: 1px solid var(--line);
-    border-radius: 0; cursor: pointer;
+    margin: 0 0 11px; padding: 0 0 9px; text-align: left;
+    background: none; border: none; border-bottom: 1px solid var(--line-soft);
+    border-radius: 0; cursor: pointer; color: inherit;
   }
-  button.group-head:hover { border-color: var(--accent); }
-  button.group-head:hover .group-name { color: var(--accent); }
+  button.group-head:hover { border-color: color-mix(in srgb, var(--ch) 60%, transparent); }
+  button.group-head:hover .group-name { color: var(--ch); }
   .caret {
     font-size: 10px; color: var(--muted); width: 10px; flex: 0 0 auto;
     transition: transform .12s;
   }
   .group.open .caret { transform: rotate(90deg); }
+
+  /* The channel number carries the channel's own colour: the fastest way to
+     know which wall you are looking at. */
+  .group-num {
+    font: 600 17px/1 var(--mono); font-variant-numeric: tabular-nums;
+    background: color-mix(in srgb, var(--ch) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ch) 45%, transparent);
+    color: var(--ch);
+    border-radius: 9px; padding: 8px 11px; min-width: 38px; text-align: center;
+  }
+  .group.has-issue .group-num { border-color: var(--warn); color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .group-name { font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
+  .group-sub { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
   /* One dot per TV, so a collapsed group still shows its health. */
   .dotstrip { display: flex; gap: 3px; flex-wrap: wrap; margin-left: 4px; }
   .dotstrip i {
@@ -86,58 +195,54 @@
   }
   .dotstrip i.warn { background: var(--warn); }
   .dotstrip i.bad { background: var(--bad); }
-  .group-num {
-    font: 620 15px/1 var(--mono); font-variant-numeric: tabular-nums;
-    background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 7px; padding: 7px 10px; color: var(--muted);
-  }
-  .group.has-issue .group-num { border-color: var(--warn); color: var(--warn); }
-  .group-name { font-size: 14.5px; font-weight: 620; }
-  .group-sub { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+  .dotstrip i.held { background: var(--ch); }
 
   .grid {
-    display: grid; gap: 10px;
-    grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+    display: grid; gap: 11px;
+    grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
   }
 
-  /* --- one card per TV ------------------------------------------------- */
+  /* --- one card per TV -------------------------------------------------- */
   .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 11px 12px; position: relative;
-    display: flex; flex-direction: column; gap: 8px;
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-left: 3px solid var(--ch);
+    border-radius: var(--r-card); padding: 12px 13px; position: relative;
+    display: flex; flex-direction: column; gap: 9px;
   }
-  .card.drift { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn) inset; }
-  .card.held { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
-  .held-banner {
-    background: color-mix(in srgb, var(--accent) 20%, transparent);
-    border: 1px solid var(--accent); border-radius: 8px; padding: 7px 9px;
-    font-size: 12px; display: flex; align-items: center; gap: 8px;
-  }
-  .held-banner b { white-space: nowrap; }
-  .card.offline { border-color: var(--bad); opacity: .8; }
+  .card.drift { border-color: var(--warn); border-left-color: var(--warn); }
+  .card.held { border-color: var(--ch); border-left-width: 3px; }
+  .card.offline { border-color: var(--bad); border-left-color: var(--bad); opacity: .85; }
   .card.busy::after {
-    content: ""; position: absolute; inset: 0; border-radius: var(--radius);
-    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    content: ""; position: absolute; inset: 0; border-radius: var(--r-card);
+    background: color-mix(in srgb, var(--ground) 55%, transparent);
     /* Purely a visual cue. It must never swallow clicks: a stuck busy flag
        would otherwise make the card unusable until a page reload. */
     pointer-events: none;
   }
-  .card-head { display: flex; align-items: baseline; gap: 7px; }
+  .held-banner {
+    background: color-mix(in srgb, var(--ch) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ch) 50%, transparent);
+    border-radius: var(--r-ctl); padding: 7px 9px;
+    font-size: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .held-banner b { white-space: nowrap; }
+
+  .card-head { display: flex; align-items: baseline; gap: 8px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
   .dot.on { background: var(--ok); }
   .dot.off { background: var(--bad); }
   .dot.unknown { background: var(--warn); }
-  .title { font-weight: 600; font-size: 13.5px; }
+  .title { font-weight: 600; font-size: 13.5px; letter-spacing: -.1px; }
   .sub { color: var(--muted); font-size: 11px; font-family: var(--mono); }
 
   /* Shown only when something is wrong: what the TV is actually on. */
   .now {
-    display: flex; align-items: center; gap: 9px;
-    background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 8px; padding: 7px 9px;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--raised); border: 1px solid var(--line-soft);
+    border-radius: var(--r-ctl); padding: 8px 10px;
   }
   .chan-num {
-    font: 620 19px/1 var(--mono); font-variant-numeric: tabular-nums;
+    font: 600 20px/1 var(--mono); font-variant-numeric: tabular-nums;
     min-width: 1.8em; text-align: center;
   }
   .chan-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -145,143 +250,165 @@
 
   .chips { display: flex; gap: 4px; flex-wrap: wrap; }
   .chip {
-    font-size: 10.5px; padding: 1px 6px; border-radius: 999px;
+    font-size: 10.5px; padding: 1.5px 7px; border-radius: var(--r-pill);
     border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
   }
-  .chip.ok { border-color: var(--ok); color: var(--ok); }
-  .chip.warn { border-color: var(--warn); color: var(--warn); }
-  .chip.bad { border-color: var(--bad); color: var(--bad); }
+  .chip.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
+  .chip.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); color: var(--warn); }
+  .chip.bad { border-color: color-mix(in srgb, var(--bad) 55%, transparent); color: var(--bad); }
 
   .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
   .buttons button {
-    text-align: left; padding: 5px 8px; font-size: 12px;
+    text-align: left; padding: 6px 9px; font-size: 12px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border-color: var(--line-soft);
   }
+  /* The channel it is on now, in that channel's own colour. */
   .buttons button.current {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--ch); border-color: var(--ch);
+    background: color-mix(in srgb, var(--ch) 16%, transparent);
+    font-weight: 600;
   }
   .buttons button.expected::before { content: "\2605 "; color: var(--warn); }
 
   .foot {
-    display: flex; flex-direction: column; gap: 6px;
-    border-top: 1px solid var(--line); padding-top: 7px;
+    display: flex; flex-direction: column; gap: 7px;
+    border-top: 1px solid var(--line-soft); padding-top: 8px;
   }
   .foot-row { display: flex; align-items: center; gap: 7px; }
-  /* Links share the width evenly, so they never strand one on its own line. */
-  .foot-links { display: flex; gap: 9px; flex-wrap: wrap; }
+  .foot-links { display: flex; gap: 10px; flex-wrap: wrap; }
   .foot label { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
   .foot select { flex: 1 1 auto; min-width: 0; }
-  select {
-    font: inherit; font-size: 11.5px; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px;
-    max-width: 100%;
-  }
+
+  /* Eight of these sit at the foot of every card. Underlining them all turns
+     the bottom of each card into hatching, so the underline is kept for
+     hover, where it confirms what you are about to click. */
   .link {
-    background: none; border: none; color: var(--muted); text-decoration: underline;
-    padding: 1px 0; font-size: 11px; cursor: pointer;
+    background: none; border: none; color: var(--muted); text-decoration: none;
+    text-underline-offset: 3px; padding: 1px 0; font-size: 11px; cursor: pointer;
   }
-  .link:hover:not(:disabled) { color: var(--accent); }
+  .link:hover:not(:disabled) {
+    color: var(--ch); border-color: transparent; text-decoration: underline;
+  }
+
   .advanced {
-    display: flex; flex-direction: column; gap: 6px;
-    border-top: 1px solid var(--line); padding-top: 7px;
+    display: flex; flex-direction: column; gap: 7px;
+    border-top: 1px solid var(--line-soft); padding-top: 8px;
   }
   .advanced h4 {
-    margin: 0; font-size: 11px; color: var(--muted); font-weight: 550;
-    text-transform: uppercase; letter-spacing: .5px;
+    margin: 0; font-size: 11.5px; color: var(--muted); font-weight: 600;
   }
   .advanced .field { display: flex; gap: 5px; align-items: center; }
-  .advanced input {
+  .advanced input, .rename input {
     font: inherit; font-size: 12px; flex: 1 1 auto; min-width: 0;
-    color: var(--text); background: var(--panel-2);
-    border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px;
+    color: var(--text); background: var(--raised);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
   }
-  .advanced input:focus { outline: none; border-color: var(--accent); }
-  .advanced button { font-size: 11.5px; padding: 4px 9px; white-space: nowrap; }
+  .advanced input:focus, .rename input:focus {
+    outline: none; border-color: var(--ch);
+  }
+  .advanced button { font-size: 11.5px; padding: 5px 10px; white-space: nowrap; }
   .advanced .warn-note { font-size: 11px; color: var(--warn); }
+
   .rename { display: flex; flex-direction: column; gap: 5px; }
-  .rename input {
-    font: inherit; font-size: 12.5px; width: 100%; color: var(--text);
-    background: var(--panel-2); border: 1px solid var(--accent);
-    border-radius: 6px; padding: 4px 7px;
-  }
-  .rename input:focus { outline: none; }
+  .rename input { width: 100%; font-size: 12.5px; border-color: var(--ch); }
   .rename .row2 { display: flex; gap: 5px; }
-  .rename button { font-size: 11.5px; padding: 3px 9px; }
+  .rename button { font-size: 11.5px; padding: 4px 10px; }
+
   .note { font-size: 11px; color: var(--muted); }
   .note.err { color: var(--bad); font-family: var(--mono); word-break: break-all; }
   pre.raw {
-    margin: 0; background: var(--bg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 10.5px;
+    margin: 0; background: var(--ground); border: 1px solid var(--line-soft);
+    border-radius: 6px; padding: 9px; font-family: var(--mono); font-size: 10.5px;
     max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
   }
 
-  section.log { margin-top: 30px; }
+  /* --- event log -------------------------------------------------------- */
+  section.log { margin-top: 32px; }
   button.log-head {
     display: flex; align-items: center; gap: 8px; width: 100%;
-    background: none; border: none; border-bottom: 1px solid var(--line);
-    border-radius: 0; padding: 0 0 7px; margin: 0 0 8px; cursor: pointer;
-    font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px;
-    color: var(--muted);
+    background: none; border: none; border-bottom: 1px solid var(--line-soft);
+    border-radius: 0; padding: 0 0 8px; margin: 0 0 9px; cursor: pointer;
+    font-size: 12.5px; color: var(--muted);
   }
-  button.log-head:hover { color: var(--accent); border-color: var(--accent); }
+  button.log-head:hover { color: var(--text); border-color: var(--muted); }
   section.log.open .caret { transform: rotate(90deg); }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { text-align: left; padding: 4px 9px; border-bottom: 1px solid var(--line); }
+  th, td { text-align: left; padding: 5px 9px; border-bottom: 1px solid var(--line-soft); }
   th { color: var(--muted); font-weight: 500; }
   td.ts { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
-  td.kind { white-space: nowrap; }
+  td.kind { white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
   .k-drift, .k-signal_lost, .k-auto_nudge, .k-config { color: var(--warn); }
   .k-renamed, .k-added, .k-discovered, .k-imported,
-  .k-enabled, .k-disabled, .k-device_name, .k-address { color: var(--accent); }
+  .k-enabled, .k-disabled, .k-device_name, .k-address { color: #4DA3FF; }
   .k-device_name_failed, .k-address_failed, .k-setup_failed { color: var(--bad); }
   .k-setup { color: var(--ok); }
-  .dotstrip i.held { background: var(--accent); }
   .k-offline, .k-switch_failed, .k-reacquire_failed, .k-identify_failed { color: var(--bad); }
   .k-switch, .k-online, .k-signal_restored, .k-auto_repair,
   .k-reacquire, .k-identify { color: var(--ok); }
 
+  /* --- toasts ----------------------------------------------------------- */
   #toasts {
     position: fixed; right: 16px; bottom: 16px; display: flex;
     flex-direction: column; gap: 8px; z-index: 50; max-width: 380px;
   }
   .toast {
-    background: var(--panel); border: 1px solid var(--line);
-    border-left: 3px solid var(--accent); border-radius: 8px;
-    padding: 8px 12px; font-size: 12.5px; box-shadow: 0 6px 22px #0006;
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--ch); border-radius: var(--r-ctl);
+    padding: 9px 13px; font-size: 12.5px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45);
   }
   .toast.ok { border-left-color: var(--ok); }
   .toast.bad { border-left-color: var(--bad); }
-  .empty { color: var(--muted); padding: 28px; text-align: center; }
+
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+
+  @media (max-width: 620px) {
+    main { padding: 14px 12px 40px; }
+    header.top { padding: 9px 12px 0; }
+    .grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
 <header class="top">
-  <h1>Ecler VEO Manager<small id="clock"></small></h1>
-  <div class="stats" id="stats"></div>
-  <div class="spacer"></div>
-  <label class="ctl" for="sort">Sort</label>
-  <select id="sort" title="Order the cards within each group">
-    <option value="name">by name</option>
-    <option value="ip">by IP address</option>
-  </select>
-  <a id="export" href="/api/inventory" download="devices.txt"
-     title="Download the current names as a devices.txt, so your naming work has a second copy">Export names</a>
-  <a id="export-config" href="/api/config" download
-     title="Download the complete config: names, IPs, channels, expected channels and settings">Backup</a>
-  <button id="import-config"
-     title="Restore a complete config from a Backup file. The current one is kept as a timestamped backup.">Restore…</button>
-  <input id="import-file" type="file" accept=".json,application/json" hidden>
-  <button id="setup" title="Set up a factory-default device and add it to the fleet">Set up new device</button>
-  <button id="scan" title="Look for VEO devices on the network that are not in the config">Scan network</button>
-  <button id="expand-all" title="Expand every group">Expand all</button>
-  <button id="collapse-all" title="Collapse every group">Collapse all</button>
-  <button id="release-all" hidden>Restore held screens</button>
-  <button id="repair" class="warn" disabled>Repair drifted</button>
-  <button id="refresh">Refresh now</button>
-  <form id="signout" method="post" action="/logout" hidden style="margin:0">
-    <button type="submit">Sign out</button>
-  </form>
+  <div class="top-row">
+    <h1>Ecler VEO Manager<small id="clock"></small></h1>
+    <div class="stats" id="stats"></div>
+    <div class="spacer"></div>
+    <button id="release-all" hidden>Restore held screens</button>
+    <button id="repair" class="warn" disabled>Repair drifted</button>
+    <button id="refresh" class="primary">Refresh now</button>
+  </div>
+
+  <!-- The building at a glance: one segment per receiver, in its channel's
+       colour, red when it wants attention. Click one to jump to its card. -->
+  <div class="signalbar" id="signalbar" title="Every receiver, by channel"></div>
+
+  <div class="top-row controls">
+    <label class="ctl" for="sort">Sort</label>
+    <select id="sort" title="Order the cards within each group">
+      <option value="name">by name</option>
+      <option value="ip">by IP address</option>
+    </select>
+    <button id="expand-all" class="quiet" title="Expand every group">Expand all</button>
+    <button id="collapse-all" class="quiet" title="Collapse every group">Collapse all</button>
+    <span class="sep"></span>
+    <button id="setup" title="Set up a factory-default device and add it to the fleet">Set up new device</button>
+    <button id="scan" title="Look for VEO devices on the network that are not in the config">Scan network</button>
+    <span class="sep"></span>
+    <a id="export" href="/api/inventory" download="devices.txt"
+       title="Download the current names as a devices.txt, so your naming work has a second copy">Export names</a>
+    <a id="export-config" href="/api/config" download
+       title="Download the complete config: names, IPs, channels, expected channels and settings">Backup</a>
+    <button id="import-config"
+       title="Restore a complete config from a Backup file. The current one is kept as a timestamped backup.">Restore…</button>
+    <input id="import-file" type="file" accept=".json,application/json" hidden>
+    <div class="spacer"></div>
+    <form id="signout" method="post" action="/logout" hidden style="margin:0">
+      <button type="submit" class="quiet">Sign out</button>
+    </form>
+  </div>
 </header>
 
 <main>
@@ -465,6 +592,36 @@ async function load() {
   }
 }
 
+// The whole fleet as one strip: a segment per receiver, in the colour of the
+// channel it belongs to, going red when it needs attention. Sorted by channel
+// so the blocks of colour match the sections below. Click a segment to jump.
+function renderSignalBar() {
+  const bar = document.getElementById("signalbar");
+  const devices = (state.data.devices || []).filter((d) => d.enabled !== false);
+  if (!devices.length) { bar.replaceChildren(); return; }
+
+  const ordered = devices.slice().sort((a, b) => {
+    const ca = a.expected_group_id ?? 999, cb = b.expected_group_id ?? 999;
+    if (ca !== cb) return ca - cb;
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  bar.replaceChildren(...ordered.map((d) => {
+    const seg = document.createElement("i");
+    const health = deviceHealth(d);
+    seg.className = "seg " + (health === "ok" || health === "held" ? "live" : health);
+    seg.style.setProperty("--seg", channelHue(d.expected_group_id));
+    seg.title = `${d.name} — ${d.channel_name || "channel " + (d.group_id ?? "?")}`
+              + (health === "ok" ? "" : ` (${health === "bad" ? "offline"
+                  : d.drifted ? "wrong channel" : "no signal"})`);
+    seg.addEventListener("click", () => {
+      const card = document.querySelector(`[data-card="${CSS.escape(d.id)}"]`);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return seg;
+  }));
+}
+
 function renderStats() {
   const { summary, poll } = state.data;
   const items = [
@@ -520,6 +677,9 @@ function deviceCard(device) {
   else if (device.drifted) classes.push("drift");
   if (device.busy || state.pending.has(device.id)) classes.push("busy");
   card.className = classes.join(" ");
+  // So the signal bar can scroll straight to this card. Without it the lookup
+  // lands on whichever button inside the card matched first.
+  card.dataset.card = device.id;
 
   const settled = device.online && !device.drifted;
   const dotClass = !device.online ? "off"
@@ -647,6 +807,31 @@ function sortDevices(devices) {
   return [...devices].sort(state.sort === "ip" ? compareIp : compareName);
 }
 
+// --- channel identity --------------------------------------------------
+// A channel's colour is its name at a glance: you learn that Production is
+// amber long before you read the word. Used on the group number, the card's
+// left edge, the current-channel button and the signal bar -- never on
+// anything that reports *state*, which has its own palette (ok/warn/bad), so
+// the two can never be mistaken for each other.
+// Indexed by channel number directly, so index 0 is the rarely-used channel 0
+// and channel 1 lands on amber. Production reading amber and Office blue is
+// the ordering the building already uses in conversation.
+const CHANNEL_HUES = [
+  "#A98BFF",  // 0  violet
+  "#FF8A3D",  // 1  amber
+  "#4DA3FF",  // 2  blue
+  "#FF5C9A",  // 3  magenta
+  "#2FD9A8",  // 4  teal
+  "#FFD84D",  // 5  yellow
+];
+
+function channelHue(groupId) {
+  // No expected channel set: a neutral slate, so it reads as "unassigned"
+  // rather than borrowing a channel's identity.
+  if (groupId === null || groupId === undefined) return "#5A6683";
+  return CHANNEL_HUES[groupId % CHANNEL_HUES.length];
+}
+
 function deviceHealth(device) {
   if (device.held) return "held";
   if (!device.online) return "bad";
@@ -715,6 +900,9 @@ function groupSection({ key, groupId, name, note, transmitter, multicast,
   const section = document.createElement("section");
   section.className = "group" + (hasIssue || !devices.length ? " has-issue" : "")
                     + (expanded ? " open" : "");
+  // Every card inside inherits --ch, so the channel's colour reaches the
+  // left edge of each card without the card renderer knowing about channels.
+  section.style.setProperty("--ch", channelHue(groupId));
 
   const chips = [];
   if (!devices.length) {
@@ -951,6 +1139,7 @@ function renderFound() {
 
 function render() {
   renderStats();
+  renderSignalBar();
   renderSetup();
   renderFound();
   renderDisabled();
