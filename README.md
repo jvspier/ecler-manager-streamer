@@ -17,16 +17,20 @@ dependencies. The streamer additionally needs `ffmpeg`, `Xvfb` and `chromium`,
 which do the rendering and encoding.
 
 <a href="images/mainscreen.png">
-  <img src="images/mainscreen.png" alt="The manager's main view: one row per channel, healthy ones collapsed to a dot per TV, one expanded showing a receiver on the wrong channel" width="820">
+  <img src="images/mainscreen.png" alt="The manager's main view: four channels collapsed to one line each, with a coloured dot per TV, and the event log below" width="820">
 </a>
 
-**The manager's main view.** One row per channel. A healthy channel collapses to
-a single line with a dot per TV, so it stays readable at a glance; anything with
-a problem opens itself. Here one receiver has drifted onto the wrong channel and
-is ringed, with what it is *actually* showing spelled out against what it should
-be. Channel 3 is flagged `no TVs assigned` — a transmitter streaming to nobody.
-Receivers deliberately set aside sit in **Spares / In storage**, not polled and
-not counted as faults.
+**The manager's main view.** One line per channel, with a dot per TV. A whole
+building fits on a screen, and you can still see *which* TV is unwell without
+opening anything — amber on Reception is a receiver with no picture, amber on
+Workshop is one on the wrong channel, red on Loading Bay is one that stopped
+answering. Channel 3 is flagged `no TVs assigned`: a transmitter streaming to
+nobody. Receivers deliberately set aside sit in **Spares / In storage**, not
+polled and not counted as faults. A channel with a problem opens itself unless
+you have collapsed it yourself, as here.
+
+The event log answers the question that actually matters over time — *how often
+does this happen?* Every drift, signal loss, switch and re-acquire, timestamped.
 
 <a href="images/detailedview.png">
   <img src="images/detailedview.png" alt="A channel expanded, one card per TV, with one card's action list open" width="820">
