@@ -48,6 +48,7 @@ import argparse
 import ipaddress
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -170,6 +171,14 @@ def warn_if_multihomed() -> None:
               "  --interface <iface> to pin it.\n", file=sys.stderr)
 
 
+def stop_page(display: str) -> None:
+    """Take down the Xvfb and browser that start_page() put up."""
+    script = Path(__file__).resolve().parent / "pagesource.sh"
+    if script.exists():
+        subprocess.run(["bash", str(script), "--display", display, "--stop"],
+                       check=False)
+
+
 def display_is_live(display: str) -> bool:
     """Is there an X server on this display that ffmpeg could read?
 
@@ -253,11 +262,8 @@ def manage(pidfile: Path, *, stop: bool) -> int:
         display_file = pidfile.with_suffix(".display")
         if display_file.exists():
             display = display_file.read_text().strip()
-            script = Path(__file__).resolve().parent / "pagesource.sh"
-            if script.exists():
-                print(f"also stopping the page on {display}")
-                subprocess.run(["bash", str(script), "--display", display,
-                                "--stop"])
+            print(f"also stopping the page on {display}")
+            stop_page(display)
             display_file.unlink(missing_ok=True)
         return 0
 
@@ -646,11 +652,26 @@ def main(argv: list[str] | None = None) -> int:
 
     print("  (Ctrl-C to stop. Through 'pct exec' that does not arrive -- use\n"
           "   --detach instead, or stop it with: pkill -f teststream.py)\n")
+
+    # Popen rather than call, with handlers, for two reasons: systemd stops a
+    # unit with SIGTERM, whose default action kills this process outright so no
+    # cleanup runs; and a page started with --url would then be left behind,
+    # an Xvfb and a browser still holding a gigabyte with nothing reading them.
+    process = subprocess.Popen(command)
+
+    def _relay(_signum, _frame):
+        process.terminate()
+
+    signal.signal(signal.SIGTERM, _relay)
+    signal.signal(signal.SIGINT, _relay)
     try:
-        return subprocess.call(command)
+        return process.wait()
     except KeyboardInterrupt:
-        print("\nstopped.")
-        return 0
+        process.terminate()
+        return process.wait()
+    finally:
+        if started_page:
+            stop_page(args.display)
 
 
 if __name__ == "__main__":

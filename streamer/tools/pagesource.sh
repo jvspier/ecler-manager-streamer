@@ -66,8 +66,13 @@ else
 fi
 # The browser's own output is the only useful diagnostic when a page renders
 # black, so it is kept rather than discarded.
-LOGFILE="/tmp/pagesource-${DISPLAY_NUM#:}.log"
-XVFB_LOG="/tmp/pagesource-${DISPLAY_NUM#:}-xvfb.log"
+# Debian 13 mounts /tmp as tmpfs, so a browser profile and a growing log live
+# in RAM there. PAGESOURCE_RUNTIME_DIR moves them to disk; the service sets it,
+# and running by hand still falls back to /tmp.
+RUNTIME_DIR="${PAGESOURCE_RUNTIME_DIR:-/tmp}"
+mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+LOGFILE="$RUNTIME_DIR/pagesource-${DISPLAY_NUM#:}.log"
+XVFB_LOG="$RUNTIME_DIR/pagesource-${DISPLAY_NUM#:}-xvfb.log"
 
 case "$ACTION" in
 shot)
@@ -204,7 +209,7 @@ fi
 # correctly" flag in its profile, and the next start can refuse or sit on a
 # restore prompt instead of the page.  The profile holds nothing worth keeping
 # for a kiosk browser, so start clean every time.
-PROFILE="/tmp/pagesource-${DISPLAY_NUM#:}-profile"
+PROFILE="$RUNTIME_DIR/pagesource-${DISPLAY_NUM#:}-profile"
 rm -rf "$PROFILE"
 mkdir -p "$PROFILE"
 

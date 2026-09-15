@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ecler Streamer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Same palette as the manager, one accent shifted: this page can stop a
+     wall of screens, and looking different is how you know which tool you
+     are in before you click anything. */
+  :root {
+    color-scheme: dark;
+    --ground:  #1A1D1D;
+    --surface: #2B2E2E;
+    --raised:  #383C3C;
+    --hover:   #464A4A;
+    --text:    #FFFFFF;
+    --muted:   #9BA3A3;
+    --accent:  #FFD7A8;          /* warm, where the manager is mint */
+    --ok:      #6FE3B4;
+    --warn:    #FFC86B;
+    --bad:     #FF8A93;
+    --r-lg: 16px; --r-md: 10px; --r-pill: 999px;
+    --shadow: 0 1px 3px rgba(0,0,0,.4);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: Poppins, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--text);
+         font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  header.top { position: sticky; top: 0; z-index: 20; background: var(--ground);
+               padding: 16px 22px 12px; display: flex; flex-wrap: wrap;
+               gap: 10px; align-items: center; }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -.2px; }
+  h1 small { color: var(--muted); font-weight: 400; margin-left: 10px;
+             font-size: 11.5px; font-family: var(--mono); }
+  .spacer { flex: 1 1 auto; }
+
+  button { font: inherit; font-size: 12.5px; color: var(--muted);
+           background: var(--surface); border: none; border-radius: var(--r-md);
+           padding: 8px 14px; cursor: pointer;
+           transition: color .14s, background .14s; }
+  button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.primary { color: #1A1D1D; background: var(--accent); font-weight: 650; }
+  button.primary:hover:not(:disabled) { color: #1A1D1D; filter: brightness(1.06); }
+  button.danger { color: var(--bad); }
+  input, select { font: inherit; font-size: 12.5px; color: var(--text);
+                  background: var(--raised); border: 1px solid transparent;
+                  border-radius: var(--r-md); padding: 8px 11px; width: 100%; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+  main { padding: 6px 22px 56px; }
+  .grid { display: grid; gap: 14px;
+          grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+
+  .card { background: var(--surface); border-radius: var(--r-lg); padding: 17px 18px;
+          box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 13px; }
+  .card.failed { box-shadow: 0 0 0 1.5px var(--bad), var(--shadow); }
+  .card.off { opacity: .72; }
+  .card-head { display: flex; align-items: center; gap: 11px; }
+  .chan { font: 650 18px/1 var(--mono); font-variant-numeric: tabular-nums;
+          background: var(--raised); border-radius: 11px; padding: 10px 13px;
+          min-width: 44px; text-align: center; }
+  .names { min-width: 0; }
+  .title { font-weight: 650; font-size: 15px; letter-spacing: -.2px; }
+  .sub { color: var(--muted); font-size: 11.5px; font-family: var(--mono);
+         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 3px 9px; border-radius: var(--r-pill);
+          background: var(--raised); color: var(--muted); white-space: nowrap; }
+  .chip.ok { color: var(--ok); }
+  .chip.warn { color: var(--warn); }
+  .chip.bad { color: var(--bad); }
+
+  /* A picture of what is actually on that channel, which is the one thing
+     you cannot get from a status line. */
+  .shot { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover;
+          border-radius: var(--r-md); background: var(--raised); }
+  .shot-empty { display: flex; align-items: center; justify-content: center;
+                color: var(--muted); font-size: 11.5px; }
+
+  .row { display: flex; gap: 7px; align-items: center; }
+  .row > .grow { flex: 1 1 auto; min-width: 0; }
+  .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .settings label { font-size: 11px; color: var(--muted); display: block;
+                    margin-bottom: 3px; }
+  .link { background: none; border: none; color: var(--muted); padding: 2px 0;
+          font-size: 11.5px; cursor: pointer; }
+  .link:hover:not(:disabled) { color: var(--accent); background: none;
+                               text-decoration: underline; text-underline-offset: 3px; }
+  [hidden] { display: none !important; }
+
+  #toasts { position: fixed; right: 20px; bottom: 20px; display: flex;
+            flex-direction: column; gap: 10px; z-index: 50; max-width: 380px; }
+  .toast { background: var(--raised); border-left: 3px solid var(--accent);
+           border-radius: var(--r-md); padding: 12px 16px; font-size: 13px;
+           box-shadow: 0 12px 34px rgba(0,0,0,.5); }
+  .toast.ok { border-left-color: var(--ok); }
+  .toast.bad { border-left-color: var(--bad); }
+  .empty { color: var(--muted); padding: 34px; text-align: center; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Ecler Streamer<small id="clock"></small></h1>
+  <div class="spacer"></div>
+  <button id="add">Add dashboard</button>
+  <button id="refresh" class="primary">Refresh</button>
+  <form id="signout" method="post" action="/logout" hidden style="margin:0">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+
+<main>
+  <div class="grid" id="cards"><div class="empty">Loading…</div></div>
+</main>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+
+const state = { data: null, open: new Set(), draft: {} };
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function toast(message, kind) {
+  const node = document.createElement("div");
+  node.className = "toast" + (kind ? " " + kind : "");
+  node.textContent = message;
+  document.getElementById("toasts").append(node);
+  setTimeout(() => node.remove(), 6000);
+}
+
+async function api(path, options) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" }, ...options });
+  let payload = {};
+  try { payload = await response.json(); } catch { /* empty body */ }
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
+}
+
+// The 10s refresh re-renders everything, so anything half-typed is captured
+// first. Skipping the render instead would leave stale status on screen.
+function captureDrafts() {
+  for (const input of document.querySelectorAll("input[id]")) {
+    state.draft[input.id] = input.value;
+  }
+}
+function draftOr(id, fallback) {
+  return state.draft[id] !== undefined ? state.draft[id] : (fallback ?? "");
+}
+function clearDrafts(prefix) {
+  for (const key of Object.keys(state.draft)) {
+    if (key.startsWith(prefix)) delete state.draft[key];
+  }
+}
+
+function statusChips(dash) {
+  const s = dash.status || {};
+  const chips = [];
+  if (!dash.enabled) {
+    chips.push('<span class="chip">disabled</span>');
+  } else if (s.active === "active") {
+    chips.push('<span class="chip ok">streaming</span>');
+  } else if (s.active === "failed") {
+    chips.push('<span class="chip bad">failed</span>');
+  } else if (s.active === "activating") {
+    chips.push('<span class="chip warn">starting</span>');
+  } else {
+    chips.push('<span class="chip warn">stopped</span>');
+  }
+  if (s.restarts) chips.push(`<span class="chip warn">${s.restarts} restarts</span>`);
+  return chips.join("");
+}
+
+function card(dash) {
+  const node = document.createElement("div");
+  const s = dash.status || {};
+  node.className = "card"
+    + (s.active === "failed" ? " failed" : "")
+    + (dash.enabled ? "" : " off");
+
+  const open = state.open.has(dash.channel);
+  const running = s.active === "active";
+
+  node.innerHTML = `
+    <div class="card-head">
+      <span class="chan">${dash.channel}</span>
+      <span class="names grow">
+        <span class="title" style="display:block">${esc(dash.name || "Unnamed")}</span>
+        <span class="sub" style="display:block">${esc(dash.multicast)} · ${esc(dash.display_name)}</span>
+      </span>
+    </div>
+    <div class="chips">${statusChips(dash)}</div>
+    ${running
+      ? `<img class="shot" alt="What channel ${dash.channel} is showing"
+              src="/api/preview/${dash.channel}.png?t=${Date.now()}"
+              onerror="this.replaceWith(Object.assign(document.createElement('div'),
+                       {className:'shot shot-empty',textContent:'no preview yet'}))">`
+      : `<div class="shot shot-empty">not streaming</div>`}
+    <div class="row">
+      <input class="grow" id="url-${dash.channel}" placeholder="https://dashboard/"
+             value="${esc(draftOr("url-" + dash.channel, dash.url))}">
+      <button data-act="save-url" data-ch="${dash.channel}">Save</button>
+    </div>
+    <div class="row">
+      ${dash.enabled
+        ? `<button data-act="${running ? "restart" : "start"}" data-ch="${dash.channel}">${running ? "Restart" : "Start"}</button>
+           <button data-act="stop" data-ch="${dash.channel}" ${running ? "" : "disabled"}>Stop</button>
+           <button class="link" data-act="disable" data-ch="${dash.channel}">disable</button>`
+        : `<button data-act="enable" data-ch="${dash.channel}">Enable</button>`}
+      <span class="spacer"></span>
+      <button class="link" data-act="toggle" data-ch="${dash.channel}">${open ? "less" : "settings"}</button>
+    </div>
+    <div class="settings" ${open ? "" : "hidden"}>
+      <div><label for="name-${dash.channel}">Name</label>
+        <input id="name-${dash.channel}" value="${esc(draftOr("name-" + dash.channel, dash.name))}"></div>
+      <div><label for="bitrate-${dash.channel}">Bitrate</label>
+        <input id="bitrate-${dash.channel}" value="${esc(draftOr("bitrate-" + dash.channel, dash.bitrate))}"></div>
+      <div><label for="capture-${dash.channel}">Capture fps</label>
+        <input id="capture-${dash.channel}" value="${esc(draftOr("capture-" + dash.channel, dash.capture_fps))}"></div>
+      <div><label for="fps-${dash.channel}">Output fps</label>
+        <input id="fps-${dash.channel}" value="${esc(draftOr("fps-" + dash.channel, dash.fps))}"></div>
+      <div class="row" style="grid-column:1/-1">
+        <button data-act="save-settings" data-ch="${dash.channel}">Save settings</button>
+        <span class="spacer"></span>
+        <button class="link danger" data-act="delete" data-ch="${dash.channel}">delete dashboard</button>
+      </div>
+    </div>`;
+  return node;
+}
+
+function render() {
+  const cards = document.getElementById("cards");
+  const list = state.data.dashboards || [];
+  if (!list.length) {
+    cards.innerHTML = '<div class="empty">No dashboards yet. '
+      + 'Add one, give it a URL, then enable it.</div>';
+  } else {
+    cards.replaceChildren(...list.map(card));
+  }
+  const when = new Date(state.data.server_time * 1000);
+  document.getElementById("clock").textContent =
+    `${list.length} dashboard(s) · ${when.toLocaleTimeString()}`
+    + (state.data.systemd ? "" : " · systemd unavailable");
+  document.getElementById("signout").hidden = false;
+}
+
+async function load() {
+  captureDrafts();
+  try {
+    state.data = await api("/api/state");
+    render();
+  } catch (err) {
+    toast(`Cannot reach the streamer: ${err.message}`, "bad");
+  }
+}
+
+async function act(channel, action, body) {
+  return api(`/api/dashboards/${channel}` + (action ? `/${action}` : ""),
+             { method: "POST", body: JSON.stringify(body || {}) });
+}
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-act]");
+  if (!button || button.disabled) return;
+  const channel = Number(button.dataset.ch);
+  const action = button.dataset.act;
+
+  if (action === "toggle") {
+    if (state.open.has(channel)) state.open.delete(channel);
+    else state.open.add(channel);
+    captureDrafts();
+    return render();
+  }
+  try {
+    if (action === "save-url") {
+      const url = document.getElementById(`url-${channel}`).value.trim();
+      await act(channel, null, { url });
+      clearDrafts(`url-${channel}`);
+      toast(`Channel ${channel}: URL saved. Restart to apply.`, "ok");
+    } else if (action === "save-settings") {
+      await act(channel, null, {
+        name: document.getElementById(`name-${channel}`).value.trim(),
+        bitrate: document.getElementById(`bitrate-${channel}`).value.trim(),
+        capture_fps: Number(document.getElementById(`capture-${channel}`).value),
+        fps: Number(document.getElementById(`fps-${channel}`).value),
+      });
+      clearDrafts(`name-${channel}`); clearDrafts(`bitrate-${channel}`);
+      clearDrafts(`capture-${channel}`); clearDrafts(`fps-${channel}`);
+      toast(`Channel ${channel}: settings saved. Restart to apply.`, "ok");
+    } else if (action === "enable" || action === "disable") {
+      await act(channel, null, { enabled: action === "enable" });
+      if (action === "disable") await act(channel, "stop").catch(() => {});
+      toast(`Channel ${channel} ${action}d`, "ok");
+    } else if (action === "delete") {
+      if (!confirm(`Delete the dashboard on channel ${channel}?\n\n`
+                 + "Its stream is stopped and the screens showing it go to "
+                 + "'waiting for connection'.")) return;
+      await act(channel, "delete");
+      state.open.delete(channel);
+      toast(`Channel ${channel} deleted`, "ok");
+    } else {
+      // start / stop / restart
+      if (action === "stop" && !confirm(
+            `Stop channel ${channel}?\n\nEvery screen on it goes blank.`)) return;
+      await act(channel, action);
+      toast(`Channel ${channel}: ${action}ed`, "ok");
+    }
+    await load();
+  } catch (err) {
+    toast(`Channel ${channel}: ${err.message}`, "bad");
+  }
+});
+
+document.getElementById("refresh").addEventListener("click", load);
+document.getElementById("add").addEventListener("click", async () => {
+  const raw = prompt("Channel number for the new dashboard (0-63):");
+  if (raw === null) return;
+  const channel = Number(raw.trim());
+  if (!Number.isInteger(channel) || channel < 0 || channel > 63) {
+    return toast("Channel must be a whole number from 0 to 63", "bad");
+  }
+  try {
+    await api("/api/dashboards", {
+      method: "POST", body: JSON.stringify({ channel, name: "", url: "" }) });
+    state.open.add(channel);
+    toast(`Channel ${channel} added. Give it a URL, then enable it.`, "ok");
+    await load();
+  } catch (err) {
+    toast(err.message, "bad");
+  }
+});
+
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>

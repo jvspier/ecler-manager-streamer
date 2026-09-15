@@ -1,0 +1,83 @@
+# Ecler Streamer
+
+Renders web dashboards headlessly and streams them as H.264 over multicast, so
+a VEO receiver shows them without a PC attached to a transmitter.
+
+It is a **separate service** from the Ecler Manager, deliberately. The manager
+is operational — you open it when a TV drops off. The streamer is
+set-and-forget. Keeping them apart means a stray click in the tool you use
+daily cannot stop a wall of screens.
+
+## How it fits together
+
+```
+systemd ── dashboard-stream@5 ── stream.py ── teststream.py ── ffmpeg ──► 239.255.42.47
+                                                  └─ pagesource.sh ── Xvfb + Chromium
+eclerstreamer.service ── web UI on :8478 ── systemctl start/stop/restart
+```
+
+**systemd owns the streams; the web UI is only a remote control.** It can
+crash, hang, or be stopped for an upgrade and not one frame stops. That is the
+whole reason for the split.
+
+## Install
+
+On a Debian host with a leg on the TV VLAN:
+
+```bash
+apt-get install -y python3 ffmpeg xvfb chromium git \
+                   fonts-liberation fonts-dejavu-core fonts-noto-color-emoji
+git clone <repo> /root/ecler && bash /root/ecler/streamer/deploy/install.sh
+```
+
+Then set `local_addr` in `/etc/eclerstreamer/config.json` to this host's
+address on the TV VLAN. Without it multicast leaves by the default route,
+which is the management VLAN, and the receivers never see it — with no error
+anywhere. It is the single most common way to get a silent failure here.
+
+Set a login before exposing it:
+
+```bash
+python3 tools/setpassword.py --env /etc/eclerstreamer/eclerstreamer.env --user admin
+```
+
+## Running a dashboard
+
+1. **Add dashboard** in the web UI, give it a channel number.
+2. Paste the URL, **Save**.
+3. **Enable**, then `systemctl enable --now dashboard-stream@<channel>` so it
+   comes back after a reboot.
+
+The card then shows a live screenshot of what that channel is actually
+displaying, which is the one thing a status line cannot tell you.
+
+## Sizing
+
+Measured, one 1080p30 stream of a heavy page (slideshow, photos, animation):
+
+| | |
+|---|---|
+| CPU | 0.61 cores on an i3-8100T (3.1GHz) |
+| Memory | ~700 MB over a ~250 MB base |
+
+A static dashboard of bars and text costs noticeably less, and can run at
+`capture_fps` 10 — sampling a still page 30 times a second is pure waste.
+Four streams fit comfortably in 6 vCPU and 8 GB.
+
+## The settings that matter, and why
+
+These were expensive to find. `docs/streaming.md` has the full account.
+
+| Setting | Why |
+|---|---|
+| no `-re` on the capture | x11grab paces itself; a second pacer makes frames arrive unevenly and animation judder, while the encoder still reports `speed=1.0x` |
+| `nal-hrd=cbr` + `-muxrate` | a near-static page collapses to a fraction of its budget then bursts on a slide change, which is the worst case for a hardware decoder |
+| `-qmin 18` | without a floor the encoder goes near-lossless and a photographic keyframe exceeds what H.264 level 4.0 allows, so the decoder truncates it and the picture tears |
+| `bitrate=`/`burst_bits=` on the socket | `-muxrate` paces the stream's timestamps, not the bytes; a whole frame written at line rate overruns a small receiver buffer |
+| `-draw_mouse 0` | Xvfb `-nocursor` does not work — the browser sets its own cursor on its own window |
+| browser anti-throttling flags | Chromium backgrounds a renderer it thinks nobody is watching, and under a bare Xvfb nothing tells it otherwise. It sat at 0% CPU while a slideshow was supposedly animating |
+
+**A test pattern hides every one of these.** `testsrc` changes every pixel of
+every frame, so it sits at the bitrate cap, is constant-rate by accident, has
+no photographic content, and needs no browser. It proves a receiver locks on
+and nothing more.

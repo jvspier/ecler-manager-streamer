@@ -1,0 +1,44 @@
+# One instance per channel:  systemctl enable --now dashboard-stream@5
+#
+# The unit supervises the real work, not a launcher: stream.py execs into
+# teststream.py, which owns the browser and ffmpeg, so systemd's SIGTERM
+# reaches the process that knows how to tear the display down.
+[Unit]
+Description=Dashboard stream on channel %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eclerstreamer
+Group=eclerstreamer
+WorkingDirectory=/opt/eclerstreamer
+ExecStart=/usr/bin/python3 /opt/eclerstreamer/stream.py --channel %i
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Chromium and Xvfb are started with setsid, which does not leave the cgroup,
+# so the whole tree is cleaned up here rather than left holding a gigabyte.
+KillMode=control-group
+
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/eclerstreamer
+# Not /tmp: it is tmpfs on Debian 13, and four browser profiles plus their
+# logs would sit in RAM. NOT PrivateTmp either -- the web service shells out
+# to pagesource.sh for preview screenshots and has to see the same display.
+Environment=PAGESOURCE_RUNTIME_DIR=/var/lib/eclerstreamer/run
+
+# Logs go to the journal, which rotates on its own. An ffmpeg progress line
+# twice a second filled 73MB in four days when it went to a plain file.
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target

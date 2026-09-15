@@ -1,0 +1,30 @@
+# The web UI. It manages the dashboard-stream@ units and streams nothing
+# itself, so stopping or upgrading it does not interrupt a single frame.
+[Unit]
+Description=Ecler streamer web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eclerstreamer
+Group=eclerstreamer
+WorkingDirectory=/opt/eclerstreamer
+ExecStart=/usr/bin/python3 /opt/eclerstreamer/run.py \
+    --config /etc/eclerstreamer/config.json \
+    --host 0.0.0.0 --port 8478
+Restart=on-failure
+RestartSec=5s
+
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/eclerstreamer
+Environment=PAGESOURCE_RUNTIME_DIR=/var/lib/eclerstreamer/run
+EnvironmentFile=-/etc/eclerstreamer/eclerstreamer.env
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
