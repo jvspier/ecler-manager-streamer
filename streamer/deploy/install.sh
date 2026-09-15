@@ -96,7 +96,11 @@ fi
 rm -f "$tmp_rule"
 
 systemctl daemon-reload
-systemctl enable --now eclerstreamer.service
+systemctl enable eclerstreamer.service
+# restart, not "enable --now": that starts a stopped unit but leaves a running
+# one alone, so re-running the installer would quietly keep serving the old
+# code and the old sandbox -- which looks exactly like the fix not working.
+systemctl restart eclerstreamer.service
 
 echo
 echo "✓ installed."
