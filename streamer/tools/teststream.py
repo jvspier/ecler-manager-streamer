@@ -683,20 +683,30 @@ def main(argv: list[str] | None = None) -> int:
     # cleanup runs; and a page started with --url would then be left behind,
     # an Xvfb and a browser still holding a gigabyte with nothing reading them.
     process = subprocess.Popen(command)
+    asked_to_stop = False
 
     def _relay(_signum, _frame):
+        nonlocal asked_to_stop
+        asked_to_stop = True
         process.terminate()
 
     signal.signal(signal.SIGTERM, _relay)
     signal.signal(signal.SIGINT, _relay)
     try:
-        return process.wait()
+        code = process.wait()
     except KeyboardInterrupt:
+        asked_to_stop = True
         process.terminate()
-        return process.wait()
+        code = process.wait()
     finally:
         if started_page:
             stop_page(args.display)
+
+    # ffmpeg exits 255 when interrupted, so reporting its code verbatim makes
+    # every deliberate stop look like a crash: systemd logs "Failed with
+    # result exit-code" on each restart, and anyone reading the journal later
+    # concludes the stream is unstable. We know we asked, so say it went fine.
+    return 0 if asked_to_stop else code
 
 
 if __name__ == "__main__":
