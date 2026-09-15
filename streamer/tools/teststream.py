@@ -265,6 +265,14 @@ def manage(pidfile: Path, *, stop: bool) -> int:
             print(f"also stopping the page on {display}")
             stop_page(display)
             display_file.unlink(missing_ok=True)
+        else:
+            # Only a page this tool started is recorded, so --from-display
+            # leaves nothing here. Saying so matters: a browser and an Xvfb
+            # hold around a gigabyte between them, and staying silent let one
+            # run for five days after the stream it fed had been stopped.
+            print("\n  Note: any display you started separately is still "
+                  "running.\n  Stop it with: "
+                  "bash tools/pagesource.sh --display :<N> --stop")
         return 0
 
     print(f"pid {pid}: {'running' if alive else 'GONE'}")
