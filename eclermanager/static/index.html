@@ -4,43 +4,50 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ecler VEO Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Ecler VEO Manager — a control surface for a wall of screens.
-     Two colour vocabularies that never share a slot:
-       identity (which channel)  -> --ch, on left edges and number badges
-       state    (is it working)  -> --ok/--warn/--bad, on dots and chips
-     And one typographic rule: monospace is what the machine reports
-     (channels, addresses, timestamps), sans is what a person wrote. */
+  /* Ecler VEO Manager.
+     Three rules do most of the work here:
+       1. Surfaces separate by lightness, not by outlines. A healthy card has
+          no border at all, so the ones that do have a ring are the problems.
+       2. Channel colour marks identity and appears in two places only -- the
+          group's number and the channel a receiver is currently on. Inside a
+          group every card is the same channel, so a coloured edge on each one
+          was repeating what the header already said.
+       3. Monospace is what the machine reports (addresses, channels, times);
+          sans is what a person wrote (names, locations, notes). */
   :root {
     color-scheme: dark;
 
-    --ground:    #0B111E;
-    --surface:   #131B2D;
-    --raised:    #1B2440;
-    --line:      #27324F;
-    --line-soft: #1E2841;
-    --text:      #E9EDF7;
-    --muted:     #8593B0;
+    --ground:   #1A1D1D;
+    --surface:  #2B2E2E;
+    --raised:   #383C3C;
+    --hover:    #464A4A;
+    --line:     #3A3E3E;
+    --text:     #FFFFFF;
+    --muted:    #9BA3A3;
 
-    --ok:   #35C07F;
-    --warn: #FFB13D;
-    --bad:  #FF4D6A;
+    --ok:   #6FE3B4;
+    --warn: #FFC86B;
+    --bad:  #FF8A93;
 
-    /* Channel identity. Set per group by channelHue(); cards inherit it. */
-    --ch: #4DA3FF;
+    --ch: #D7FEFA;
 
-    --r-card: 12px;
-    --r-ctl: 8px;
+    --r-lg: 16px;
+    --r-md: 10px;
     --r-pill: 999px;
+    --shadow: 0 1px 3px rgba(0,0,0,.4);
 
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --sans: Poppins, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
 
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--ground); color: var(--text);
-    font: 14px/1.45 var(--sans);
+    font: 14px/1.5 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
   :focus-visible { outline: 2px solid var(--ch); outline-offset: 2px; }
@@ -50,292 +57,272 @@
 
   /* --- header ---------------------------------------------------------- */
   header.top {
-    position: sticky; top: 0; z-index: 20;
-    background: linear-gradient(var(--surface), var(--surface)) padding-box;
-    border-bottom: 1px solid var(--line);
-    padding: 10px 18px 0;
-    display: flex; flex-direction: column; gap: 9px;
+    position: sticky; top: 0; z-index: 20; background: var(--ground);
+    padding: 16px 22px 12px;
+    display: flex; flex-direction: column; gap: 12px;
   }
-  .top-row {
-    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-  }
-  .top-row.controls { padding-bottom: 9px; }
-  h1 {
-    font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -.1px;
-  }
+  .top-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -.2px; }
   h1 small {
-    color: var(--muted); font-weight: 400; margin-left: 9px;
+    color: var(--muted); font-weight: 400; margin-left: 10px;
     font-size: 11.5px; font-family: var(--mono);
   }
   .spacer { flex: 1 1 auto; }
 
-  /* The building at a glance: one segment per receiver, coloured by the
-     channel it belongs to, red when it needs attention. */
+  /* Every receiver as one segment, in its channel's colour. A fault is a
+     taller spike rather than another colour: this is the one place the
+     identity and state palettes meet, and amber-for-warning sits right next
+     to amber-for-channel-1. Height separates them whatever the hues are. */
   .signalbar {
-    display: flex; gap: 2px; align-items: flex-end;
-    height: 11px; width: 100%; min-width: 0;
+    display: flex; gap: 3px; align-items: flex-end;
+    height: 14px; width: 100%; min-width: 0;
   }
   .signalbar .seg {
-    flex: 1 1 0; min-width: 2px; border-radius: 2px;
+    flex: 1 1 0; min-width: 2px; border-radius: 3px;
     background: var(--seg, var(--line));
-    height: 5px; opacity: .5; cursor: pointer;
-    transition: height .12s, opacity .12s;
+    height: 6px; opacity: .45; cursor: pointer;
+    transition: height .14s, opacity .14s;
   }
-  .signalbar .seg:hover { opacity: 1; height: 11px; }
-  /* A fault is a spike, not merely a different colour. Hue alone would not
-     do: amber-for-warning sits right next to amber-for-channel-1, and this
-     bar is the one place the identity and state palettes share a slot.
-     Height separates them whatever the channel colours happen to be. */
-  .signalbar .seg.warn { background: var(--warn); opacity: 1; height: 11px; }
-  .signalbar .seg.bad  { background: var(--bad);  opacity: 1; height: 11px; }
-  .signalbar .seg.off  { background: var(--line); opacity: .7; }
+  .signalbar .seg:hover { opacity: 1; height: 14px; }
+  .signalbar .seg.warn { background: var(--warn); opacity: 1; height: 14px; }
+  .signalbar .seg.bad  { background: var(--bad);  opacity: 1; height: 14px; }
+  .signalbar .seg.off  { background: var(--line); opacity: .6; }
 
-  .stats { display: flex; gap: 5px; flex-wrap: wrap; }
+  .stats { display: flex; gap: 7px; flex-wrap: wrap; }
   .stat {
-    background: var(--raised); border: 1px solid var(--line-soft);
-    border-radius: var(--r-pill); padding: 3px 11px;
-    font-size: 11.5px; color: var(--muted); white-space: nowrap;
+    background: var(--surface); border-radius: var(--r-pill);
+    padding: 6px 14px; font-size: 12px; color: var(--muted); white-space: nowrap;
   }
   .stat b {
     color: var(--text); font-family: var(--mono);
-    font-variant-numeric: tabular-nums; font-weight: 600;
+    font-variant-numeric: tabular-nums; font-weight: 650; font-size: 13px;
   }
-  .stat.alert { border-color: var(--warn); color: var(--warn); }
-  .stat.alert b { color: var(--warn); }
-  .stat.bad { border-color: var(--bad); color: var(--bad); }
-  .stat.bad b { color: var(--bad); }
+  /* Coloured text on the flat surface. A warm tint mixed into this warm grey
+     goes brown at every strength -- the same trap as the channel buttons and
+     the group badges. */
+  .stat.alert, .stat.alert b { color: var(--warn); }
+  .stat.bad, .stat.bad b { color: var(--bad); }
 
-  label.ctl { font-size: 11.5px; color: var(--muted); }
-  .sep {
-    width: 1px; align-self: stretch; background: var(--line-soft);
-    margin: 2px 3px;
-  }
+  label.ctl { font-size: 12px; color: var(--muted); }
+  .sep { width: 1px; align-self: stretch; background: var(--line); margin: 3px 4px; }
 
-  /* --- controls: tiered, so they stop reading as one undifferentiated row */
+  /* --- controls -------------------------------------------------------- */
   button {
-    font: inherit; font-size: 12px; color: var(--muted);
-    background: transparent; border: 1px solid var(--line);
-    border-radius: var(--r-ctl); padding: 5px 11px; cursor: pointer;
-    transition: color .12s, border-color .12s, background .12s;
+    font: inherit; font-size: 12.5px; color: var(--muted);
+    background: var(--surface); border: none;
+    border-radius: var(--r-md); padding: 8px 14px; cursor: pointer;
+    transition: color .14s, background .14s;
   }
-  button:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
-  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
 
   button.primary {
-    color: #08101E; background: var(--ch); border-color: var(--ch);
-    font-weight: 600;
+    color: #1A1D1D; background: var(--ch); font-weight: 650;
   }
-  button.primary:hover:not(:disabled) {
-    color: #08101E; filter: brightness(1.12); border-color: var(--ch);
-  }
-  button.warn {
-    color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent);
-    background: color-mix(in srgb, var(--warn) 12%, transparent);
-  }
-  button.warn:hover:not(:disabled) { color: var(--warn); border-color: var(--warn); }
-  button.quiet { border-color: transparent; padding: 5px 8px; }
-  button.quiet:hover:not(:disabled) { border-color: var(--line); }
+  button.primary:hover:not(:disabled) { color: #1A1D1D; filter: brightness(1.1); }
+  button.warn { color: var(--warn); background: var(--surface); }
+  button.warn:hover:not(:disabled) { color: var(--warn); background: var(--hover); }
+  button.quiet { background: transparent; }
+  button.quiet:hover:not(:disabled) { background: var(--surface); }
 
   header.top a {
-    font-size: 12px; color: var(--muted); text-decoration: none;
-    border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 5px 11px;
-    transition: color .12s, border-color .12s;
+    font-size: 12.5px; color: var(--muted); text-decoration: none;
+    background: var(--surface); border-radius: var(--r-md); padding: 8px 14px;
+    transition: color .14s, background .14s;
   }
-  header.top a:hover { border-color: var(--muted); color: var(--text); }
+  header.top a:hover { color: var(--text); background: var(--hover); }
 
   select {
-    font: inherit; font-size: 11.5px; background: var(--raised); color: var(--text);
-    border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px;
-    max-width: 100%;
+    font: inherit; font-size: 12px; background: var(--raised); color: var(--text);
+    border: none; border-radius: var(--r-md); padding: 7px 10px; max-width: 100%;
   }
-  header.top select { font-size: 12px; border-radius: var(--r-ctl); padding: 5px 8px; }
+  header.top select { font-size: 12.5px; padding: 8px 12px; }
 
-  main { padding: 18px 18px 48px; }
-
-  /* Not channels, so they do not take a channel's colour. */
-  #setup-panel { --ch: #2FD9A8; }
-  #found { --ch: #FFB13D; }
-  #disabled { --ch: #5A6683; }
+  main { padding: 6px 22px 56px; }
 
   /* --- one section per channel ----------------------------------------- */
-  section.group { margin-bottom: 24px; }
+  section.group { margin-bottom: 34px; }
   button.group-head, div.group-head {
-    display: flex; align-items: center; gap: 11px; width: 100%;
-    margin: 0 0 11px; padding: 0 0 9px; text-align: left;
-    background: none; border: none; border-bottom: 1px solid var(--line-soft);
-    border-radius: 0; cursor: pointer; color: inherit;
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    margin: 0 0 14px; padding: 0; text-align: left;
+    background: none; border: none; border-radius: 0; cursor: pointer;
+    color: inherit;
   }
-  button.group-head:hover { border-color: color-mix(in srgb, var(--ch) 60%, transparent); }
   button.group-head:hover .group-name { color: var(--ch); }
   .caret {
-    font-size: 10px; color: var(--muted); width: 10px; flex: 0 0 auto;
-    transition: transform .12s;
+    font-size: 11px; color: var(--muted); width: 11px; flex: 0 0 auto;
+    transition: transform .14s;
   }
   .group.open .caret { transform: rotate(90deg); }
 
-  /* The channel number carries the channel's own colour: the fastest way to
-     know which wall you are looking at. */
+  /* Flat surface, coloured text. Tinting the background with a warm hue is
+     what turned these brown -- the same trap as the channel buttons. */
   .group-num {
-    font: 600 17px/1 var(--mono); font-variant-numeric: tabular-nums;
-    background: color-mix(in srgb, var(--ch) 16%, transparent);
-    border: 1px solid color-mix(in srgb, var(--ch) 45%, transparent);
-    color: var(--ch);
-    border-radius: 9px; padding: 8px 11px; min-width: 38px; text-align: center;
+    font: 650 20px/1 var(--mono); font-variant-numeric: tabular-nums;
+    background: var(--surface); color: var(--text); border-radius: 12px;
+    padding: 12px 15px; min-width: 46px; text-align: center;
   }
-  .group.has-issue .group-num { border-color: var(--warn); color: var(--warn);
-    background: color-mix(in srgb, var(--warn) 14%, transparent); }
-  .group-name { font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
-  .group-sub { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+  .group.has-issue .group-num { color: var(--warn); }
+  .group-name { font-size: 17px; font-weight: 650; letter-spacing: -.2px; }
+  .group-sub { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
-  /* One dot per TV, so a collapsed group still shows its health. */
-  .dotstrip { display: flex; gap: 3px; flex-wrap: wrap; margin-left: 4px; }
+  .dotstrip { display: flex; gap: 4px; flex-wrap: wrap; margin-left: 6px; }
   .dotstrip i {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
-    display: block;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: block;
   }
   .dotstrip i.warn { background: var(--warn); }
   .dotstrip i.bad { background: var(--bad); }
   .dotstrip i.held { background: var(--ch); }
 
   .grid {
-    display: grid; gap: 11px;
-    grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   }
 
   /* --- one card per TV -------------------------------------------------- */
+  /* No border when all is well. The ring is reserved for trouble, so a wall
+     of healthy screens is quiet and a problem is the only thing outlined. */
   .card {
-    background: var(--surface); border: 1px solid var(--line-soft);
-    border-left: 3px solid var(--ch);
-    border-radius: var(--r-card); padding: 12px 13px; position: relative;
-    display: flex; flex-direction: column; gap: 9px;
+    background: var(--surface); border: none; border-radius: var(--r-lg);
+    padding: 17px 18px; position: relative; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 13px;
   }
-  .card.drift { border-color: var(--warn); border-left-color: var(--warn); }
-  .card.held { border-color: var(--ch); border-left-width: 3px; }
-  .card.offline { border-color: var(--bad); border-left-color: var(--bad); opacity: .85; }
+  .card.drift    { box-shadow: 0 0 0 1.5px var(--warn), var(--shadow); }
+  .card.held     { box-shadow: 0 0 0 1.5px var(--ch), var(--shadow); }
+  .card.offline  { box-shadow: 0 0 0 1.5px var(--bad), var(--shadow); opacity: .9; }
   .card.busy::after {
-    content: ""; position: absolute; inset: 0; border-radius: var(--r-card);
+    content: ""; position: absolute; inset: 0; border-radius: var(--r-lg);
     background: color-mix(in srgb, var(--ground) 55%, transparent);
     /* Purely a visual cue. It must never swallow clicks: a stuck busy flag
        would otherwise make the card unusable until a page reload. */
     pointer-events: none;
   }
   .held-banner {
-    background: color-mix(in srgb, var(--ch) 16%, transparent);
-    border: 1px solid color-mix(in srgb, var(--ch) 50%, transparent);
-    border-radius: var(--r-ctl); padding: 7px 9px;
-    font-size: 12px; display: flex; align-items: center; gap: 8px;
+    background: var(--raised); color: var(--ch);
+    border-radius: var(--r-md); padding: 10px 12px;
+    font-size: 12.5px; display: flex; align-items: center; gap: 10px;
   }
   .held-banner b { white-space: nowrap; }
 
-  .card-head { display: flex; align-items: baseline; gap: 8px; }
+  .card-head { display: flex; align-items: baseline; gap: 9px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
   .dot.on { background: var(--ok); }
   .dot.off { background: var(--bad); }
   .dot.unknown { background: var(--warn); }
-  .title { font-weight: 600; font-size: 13.5px; letter-spacing: -.1px; }
-  .sub { color: var(--muted); font-size: 11px; font-family: var(--mono); }
+  .title { font-weight: 650; font-size: 15px; letter-spacing: -.2px; }
+  .sub { color: var(--muted); font-size: 11.5px; font-family: var(--mono); }
 
   /* Shown only when something is wrong: what the TV is actually on. */
   .now {
-    display: flex; align-items: center; gap: 10px;
-    background: var(--raised); border: 1px solid var(--line-soft);
-    border-radius: var(--r-ctl); padding: 8px 10px;
+    display: flex; align-items: center; gap: 12px;
+    background: var(--raised); border-radius: var(--r-md); padding: 11px 13px;
   }
   .chan-num {
-    font: 600 20px/1 var(--mono); font-variant-numeric: tabular-nums;
-    min-width: 1.8em; text-align: center;
+    font: 650 26px/1 var(--mono); font-variant-numeric: tabular-nums;
+    min-width: 1.6em; text-align: center;
   }
-  .chan-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .chan-name { font-weight: 550; font-size: 12.5px; }
+  .chan-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .chan-name { font-weight: 600; font-size: 13px; }
 
-  .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip {
-    font-size: 10.5px; padding: 1.5px 7px; border-radius: var(--r-pill);
-    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+    font-size: 11px; padding: 3px 9px; border-radius: var(--r-pill);
+    background: var(--raised); color: var(--muted); white-space: nowrap;
   }
-  .chip.ok { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
-  .chip.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); color: var(--warn); }
-  .chip.bad { border-color: color-mix(in srgb, var(--bad) 55%, transparent); color: var(--bad); }
+  .chip.ok { color: var(--ok); }
+  .chip.warn { color: var(--warn); }
+  .chip.bad { color: var(--bad); }
 
-  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   .buttons button {
-    text-align: left; padding: 6px 9px; font-size: 12px;
+    text-align: left; padding: 9px 11px; font-size: 12.5px;
+    background: var(--raised);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    border-color: var(--line-soft);
   }
-  /* The channel it is on now, in that channel's own colour. */
+  .buttons button:hover:not(:disabled) { background: var(--hover); }
+  /* Filled, with dark text, rather than a tint. Mixing a warm hue into a cool
+     dark grey at any strength turns amber to brown -- it reads as dirt, not
+     as a channel colour. Filling also gives each card exactly one bold
+     element, which is what stops a wall of them looking like a spreadsheet. */
   .buttons button.current {
-    color: var(--ch); border-color: var(--ch);
-    background: color-mix(in srgb, var(--ch) 16%, transparent);
-    font-weight: 600;
+    color: #1A1D1D; background: var(--ch); font-weight: 650;
   }
+  .buttons button.current:hover:not(:disabled) {
+    color: #1A1D1D; background: var(--ch); filter: brightness(1.08);
+  }
+  /* The star marks the channel this receiver is supposed to be on. On the
+     filled button it inherits the dark text; elsewhere it is the warning
+     colour, because seeing it anywhere but the filled button means drift. */
   .buttons button.expected::before { content: "\2605 "; color: var(--warn); }
+  .buttons button.current.expected::before { color: inherit; opacity: .7; }
 
-  .foot {
-    display: flex; flex-direction: column; gap: 7px;
-    border-top: 1px solid var(--line-soft); padding-top: 8px;
-  }
-  .foot-row { display: flex; align-items: center; gap: 7px; }
-  .foot-links { display: flex; gap: 10px; flex-wrap: wrap; }
-  .foot label { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+  .foot { display: flex; flex-direction: column; gap: 10px; }
+  .foot-row { display: flex; align-items: center; gap: 9px; }
+  .foot label { font-size: 11.5px; color: var(--muted); flex: 0 0 auto; }
   .foot select { flex: 1 1 auto; min-width: 0; }
+  button.more { font-size: 11.5px; padding: 7px 12px; flex: 0 0 auto; }
 
-  /* Eight of these sit at the foot of every card. Underlining them all turns
-     the bottom of each card into hatching, so the underline is kept for
-     hover, where it confirms what you are about to click. */
+  /* Hidden until More is pressed. Eight links on every card was most of the
+     noise on the page, and day to day it is the channel buttons that get
+     used, not these. */
+  .foot-links {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    padding-top: 2px;
+  }
+  /* An author `display` beats the browser's [hidden] rule, so hiding this
+     needs saying explicitly or the toggle does nothing at all. */
+  .foot-links[hidden] { display: none; }
   .link {
     background: none; border: none; color: var(--muted); text-decoration: none;
-    text-underline-offset: 3px; padding: 1px 0; font-size: 11px; cursor: pointer;
+    text-underline-offset: 3px; padding: 2px 0; font-size: 11.5px; cursor: pointer;
   }
   .link:hover:not(:disabled) {
-    color: var(--ch); border-color: transparent; text-decoration: underline;
+    color: var(--ch); background: none; text-decoration: underline;
   }
 
-  .advanced {
-    display: flex; flex-direction: column; gap: 7px;
-    border-top: 1px solid var(--line-soft); padding-top: 8px;
-  }
-  .advanced h4 {
-    margin: 0; font-size: 11.5px; color: var(--muted); font-weight: 600;
-  }
-  .advanced .field { display: flex; gap: 5px; align-items: center; }
+  .advanced { display: flex; flex-direction: column; gap: 9px; }
+  .advanced h4 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .advanced .field { display: flex; gap: 7px; align-items: center; }
   .advanced input, .rename input {
-    font: inherit; font-size: 12px; flex: 1 1 auto; min-width: 0;
+    font: inherit; font-size: 12.5px; flex: 1 1 auto; min-width: 0;
     color: var(--text); background: var(--raised);
-    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+    border: 1px solid transparent; border-radius: var(--r-md); padding: 8px 11px;
   }
-  .advanced input:focus, .rename input:focus {
-    outline: none; border-color: var(--ch);
-  }
-  .advanced button { font-size: 11.5px; padding: 5px 10px; white-space: nowrap; }
-  .advanced .warn-note { font-size: 11px; color: var(--warn); }
+  .advanced input:focus, .rename input:focus { outline: none; border-color: var(--ch); }
+  .advanced button { font-size: 12px; padding: 8px 12px; white-space: nowrap; }
+  .advanced .warn-note { font-size: 11.5px; color: var(--warn); }
 
-  .rename { display: flex; flex-direction: column; gap: 5px; }
-  .rename input { width: 100%; font-size: 12.5px; border-color: var(--ch); }
-  .rename .row2 { display: flex; gap: 5px; }
-  .rename button { font-size: 11.5px; padding: 4px 10px; }
+  .rename { display: flex; flex-direction: column; gap: 7px; }
+  .rename input { width: 100%; border-color: var(--ch); }
+  .rename .row2 { display: flex; gap: 7px; }
+  .rename button { font-size: 12px; padding: 7px 12px; }
 
-  .note { font-size: 11px; color: var(--muted); }
+  .note { font-size: 11.5px; color: var(--muted); }
   .note.err { color: var(--bad); font-family: var(--mono); word-break: break-all; }
   pre.raw {
-    margin: 0; background: var(--ground); border: 1px solid var(--line-soft);
-    border-radius: 6px; padding: 9px; font-family: var(--mono); font-size: 10.5px;
+    margin: 0; background: var(--ground); border-radius: var(--r-md);
+    padding: 11px; font-family: var(--mono); font-size: 11px;
     max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all;
   }
 
   /* --- event log -------------------------------------------------------- */
-  section.log { margin-top: 32px; }
+  section.log { margin-top: 36px; }
   button.log-head {
-    display: flex; align-items: center; gap: 8px; width: 100%;
-    background: none; border: none; border-bottom: 1px solid var(--line-soft);
-    border-radius: 0; padding: 0 0 8px; margin: 0 0 9px; cursor: pointer;
-    font-size: 12.5px; color: var(--muted);
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    background: none; border: none; border-radius: 0;
+    padding: 0 0 10px; margin: 0 0 10px; cursor: pointer;
+    font-size: 13px; color: var(--muted);
   }
-  button.log-head:hover { color: var(--text); border-color: var(--muted); }
+  button.log-head:hover { color: var(--text); background: none; }
   section.log.open .caret { transform: rotate(90deg); }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { text-align: left; padding: 5px 9px; border-bottom: 1px solid var(--line-soft); }
-  th { color: var(--muted); font-weight: 500; }
+  table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    font-size: 12.5px; background: var(--surface); border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  th, td { text-align: left; padding: 10px 14px; }
+  tbody tr:nth-child(odd) { background: rgba(255,255,255,.02); }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; }
   td.ts { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
   td.kind { white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
   .k-drift, .k-signal_lost, .k-auto_nudge, .k-config { color: var(--warn); }
@@ -349,23 +336,27 @@
 
   /* --- toasts ----------------------------------------------------------- */
   #toasts {
-    position: fixed; right: 16px; bottom: 16px; display: flex;
-    flex-direction: column; gap: 8px; z-index: 50; max-width: 380px;
+    position: fixed; right: 20px; bottom: 20px; display: flex;
+    flex-direction: column; gap: 10px; z-index: 50; max-width: 380px;
   }
   .toast {
-    background: var(--surface); border: 1px solid var(--line);
-    border-left: 3px solid var(--ch); border-radius: var(--r-ctl);
-    padding: 9px 13px; font-size: 12.5px;
-    box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    background: var(--raised); border-left: 3px solid var(--ch);
+    border-radius: var(--r-md); padding: 12px 16px; font-size: 13px;
+    box-shadow: 0 12px 34px rgba(0,0,0,.5);
   }
   .toast.ok { border-left-color: var(--ok); }
   .toast.bad { border-left-color: var(--bad); }
 
-  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .empty { color: var(--muted); padding: 34px; text-align: center; }
+
+  /* Not channels, so they do not take a channel's colour. */
+  #setup-panel { --ch: #6FE3B4; }
+  #found { --ch: #FFC86B; }
+  #disabled { --ch: #9BA3A3; }
 
   @media (max-width: 620px) {
-    main { padding: 14px 12px 40px; }
-    header.top { padding: 9px 12px 0; }
+    main { padding: 6px 14px 44px; }
+    header.top { padding: 13px 14px 10px; }
     .grid { grid-template-columns: 1fr; }
   }
 </style>
@@ -478,6 +469,7 @@ const state = {
   disabledOpen: false,
   renaming: null,          // receiver id whose labels are being edited
   advanced: null,          // receiver id whose device settings are showing
+  actions: new Set(),      // receiver ids showing the full action list
   setup: null,             // what is sitting on the factory-default address
   sort: "name",
   // Values typed into an open editor, so a re-render does not discard them.
@@ -757,8 +749,11 @@ function deviceCard(device) {
       <div class="foot-row">
         <label>Should be</label>
         <select data-act="expected" data-id="${device.id}">${options}</select>
+        <button class="more" data-act="actions" data-id="${device.id}"
+          aria-expanded="${state.actions.has(device.id)}"
+          title="${state.actions.has(device.id) ? "Hide actions" : "Identify, rename, reboot and more"}">${state.actions.has(device.id) ? "Less" : "More"}</button>
       </div>
-      <div class="foot-links">
+      <div class="foot-links"${state.actions.has(device.id) ? "" : " hidden"}>
         <button class="link" data-act="identify" data-id="${device.id}"${offline}
           title="Blink this TV: it drops to no-signal for a few seconds, then returns">identify</button>
         <button class="link" data-act="hold" data-id="${device.id}"${offline || device.held ? " disabled" : ""}
@@ -818,7 +813,7 @@ function sortDevices(devices) {
 // the ordering the building already uses in conversation.
 const CHANNEL_HUES = [
   "#A98BFF",  // 0  violet
-  "#FF8A3D",  // 1  amber
+  "#FFA24F",  // 1  amber
   "#4DA3FF",  // 2  blue
   "#FF5C9A",  // 3  magenta
   "#2FD9A8",  // 4  teal
@@ -900,9 +895,9 @@ function groupSection({ key, groupId, name, note, transmitter, multicast,
   const section = document.createElement("section");
   section.className = "group" + (hasIssue || !devices.length ? " has-issue" : "")
                     + (expanded ? " open" : "");
-  // Every card inside inherits --ch, so the channel's colour reaches the
-  // left edge of each card without the card renderer knowing about channels.
-  section.style.setProperty("--ch", channelHue(groupId));
+  // Channel colour is no longer the page accent -- mint is -- so a group no
+  // longer repaints itself. The hue survives in the signal bar, where several
+  // colours are needed to show which block of screens is which.
 
   const chips = [];
   if (!devices.length) {
@@ -1265,6 +1260,12 @@ document.addEventListener("click", async (event) => {
     const nowExpanded = button.getAttribute("aria-expanded") !== "true";
     state.groupOverride[key] = nowExpanded;
     saveView();
+    render();
+    return;
+  }
+  if (action === "actions") {
+    if (state.actions.has(id)) state.actions.delete(id);
+    else state.actions.add(id);
     render();
     return;
   }
