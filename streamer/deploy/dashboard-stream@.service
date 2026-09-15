@@ -18,6 +18,13 @@ Restart=always
 RestartSec=10
 TimeoutStopSec=30
 
+# stream.py exits 2 for anything a restart cannot fix: no such channel, no
+# URL set, or the dashboard disabled. Without this the unit retries every ten
+# seconds for ever, filling the journal and reporting "activating" when the
+# truth is that a human has to change something. A crash -- ffmpeg dying, the
+# browser going away -- exits with a different status and still restarts.
+RestartPreventExitStatus=2
+
 # Chromium and Xvfb are started with setsid, which does not leave the cgroup,
 # so the whole tree is cleaned up here rather than left holding a gigabyte.
 KillMode=control-group

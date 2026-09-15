@@ -33,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"default: {config_mod.DEFAULT_PATH}")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the command instead of running it")
+    # Exit 2 means "a person has to change something" and the unit's
+    # RestartPreventExitStatus=2 stops rather than retrying for ever.
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
