@@ -50,8 +50,13 @@ install -d -o "$USER" -g "$USER" -m 0755 "$STATE_DIR" "$STATE_DIR/run"
 install -d -m 0755 "$CONF_DIR"
 
 step "Application to $APP_DIR"
-rm -rf "$APP_DIR"
+# Replace the contents, never the directory itself. A running stream has this
+# as its WorkingDirectory, and deleting it leaves that process with a cwd that
+# no longer exists -- every helper it then runs fails with "getcwd: cannot
+# access parent directories", and the stream dies on its next teardown.
 install -d -m 0755 "$APP_DIR"
+rm -rf "$APP_DIR/eclerstreamer" "$APP_DIR/tools" \
+       "$APP_DIR/stream.py" "$APP_DIR/run.py"
 cp -r "$SRC/eclerstreamer" "$SRC/tools" "$SRC/stream.py" "$SRC/run.py" "$APP_DIR/"
 chmod +x "$APP_DIR/stream.py" "$APP_DIR/run.py" "$APP_DIR/tools/pagesource.sh"
 find "$APP_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
@@ -113,3 +118,15 @@ echo "  Set a login before putting it on a shared network:"
 echo "    python3 $SRC/tools/setpassword.py --env $CONF_DIR/eclerstreamer.env --user admin"
 echo
 echo "  Each dashboard is a unit:  systemctl enable --now dashboard-stream@5"
+
+# Running streams keep the code they started with. Say so rather than leaving
+# someone to wonder why a fix has not taken effect.
+running="$(systemctl list-units 'dashboard-stream@*' --state=active \
+           --no-legend --plain 2>/dev/null | awk '{print $1}')"
+if [[ -n "$running" ]]; then
+    echo
+    echo "  ! these streams are still running the PREVIOUS code:"
+    echo "$running" | sed 's/^/      /'
+    echo "    Restart them when convenient (10-15s of black screen each):"
+    echo "$running" | sed 's/^/      systemctl restart /'
+fi
