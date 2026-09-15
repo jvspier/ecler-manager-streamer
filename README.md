@@ -1,7 +1,11 @@
-# Ecler VEO Manager
+# Ecler Manager & Streamer
 
-A web dashboard for **Ecler VEO-XTI1C / VEO-XRI1C** H.264 video-over-IP
-extenders: see what every screen is showing, and switch channels remotely.
+Two tools for **Ecler VEO-XTI1C / VEO-XRI1C** H.264 video-over-IP extenders:
+
+- **The manager** — see what every screen is showing, and switch channels
+  from a browser instead of a ladder.
+- **The streamer** — render a web dashboard headlessly and send it to a
+  channel, so no PC needs to be plugged into a transmitter at all.
 
 These extenders ship with no management tool. A receiver that loses its stream —
 which happens after a power event — is fixed by climbing to the unit and
@@ -9,40 +13,51 @@ pressing its channel button. They are, however, on the network and speak a
 control protocol, so none of that is necessary.
 
 Pure Python 3.11+ standard library. No `pip install`, no build step, no
-dependencies.
+dependencies. The streamer additionally needs `ffmpeg`, `Xvfb` and `chromium`,
+which do the rendering and encoding.
 
 <a href="images/mainscreen.png">
-  <img src="images/mainscreen.png" alt="The manager's main view: one collapsed row per transmitter, each with a dot per TV, and an event log below" width="820">
+  <img src="images/mainscreen.png" alt="The manager's main view: one row per channel, healthy ones collapsed to a dot per TV, one expanded showing a receiver on the wrong channel" width="820">
 </a>
 
-**The main view.** One row per transmitter, collapsed. Each row carries a dot
-per TV — green, amber, red — so a healthy channel stays a single line you can
-still read at a glance. Anything with a problem opens itself: here channel 3 is
-flagged `no TVs assigned`, because a transmitter is streaming to nobody. Below
-that, receivers deliberately set aside sit in **Spares / In storage**, not
-polled and not counted as faults. The event log at the bottom is what answers
-"how often does this actually happen?" — every drift, signal loss, switch and
-re-acquire, timestamped.
+**The manager's main view.** One row per channel. A healthy channel collapses to
+a single line with a dot per TV, so it stays readable at a glance; anything with
+a problem opens itself. Here one receiver has drifted onto the wrong channel and
+is ringed, with what it is *actually* showing spelled out against what it should
+be. Channel 3 is flagged `no TVs assigned` — a transmitter streaming to nobody.
+Receivers deliberately set aside sit in **Spares / In storage**, not polled and
+not counted as faults.
 
 <a href="images/detailedview.png">
-  <img src="images/detailedview.png" alt="A transmitter's group expanded, showing one card per TV with channel buttons and per-device actions" width="820">
+  <img src="images/detailedview.png" alt="A channel expanded, one card per TV, with one card's action list open" width="820">
 </a>
 
-**A group expanded.** One card per TV: its name, address and MAC, a `signal`
-chip from the device's own video-lock state, and how long it took to answer.
-The channel buttons switch it, ★ marks where it should be, and the current
-channel is highlighted. `Should be` sets the expected channel and is what turns
-drift detection on. Underneath: `identify` blinks the screen, `hold dark` parks
-it until you release it, `re-acquire` forces it to re-join its stream, `raw`
-shows the exact bytes the device last replied with, and `device settings` opens
-address and name changes. One card shows a completed action —
-*"identify re-acquire: re-acquired channel 1, signal is back"* — because every
-action is read back from the device rather than assumed.
+**A card, and what it can do.** Name, address and MAC, a `signal` chip from the
+device's own video-lock state, and how long it took to answer. The channel
+buttons switch it — the one it is on now is filled, ★ marks where it should be —
+and `Should be` sets the expected channel, which is what turns drift detection
+on. Behind `More`: `identify` blinks the screen, `hold dark` parks it until you
+release it, `re-acquire` forces it to re-join its stream, `raw` shows the exact
+bytes the device last replied with, and `device settings` opens address and name
+changes. Every action is read back from the device rather than assumed.
 
-*(Click either image for the full-size version. Receiver names and addresses are
-blurred.)*
+<a href="images/streamer.png">
+  <img src="images/streamer.png" alt="The streamer: one card per dashboard, each showing a live screenshot of what that channel is displaying" width="820">
+</a>
+
+**The streamer.** One card per dashboard: paste a URL, enable it, and a headless
+browser renders it while ffmpeg encodes and multicasts it to that channel. The
+thumbnail is a live grab of what the channel is *actually* showing, which is the
+one thing a status line cannot tell you. `fps` and `speed` come from the
+encoder itself, and a red `dropped` chip appears only when frames are genuinely
+being lost.
+
+*(Click any image for the full size. All names and addresses in them are
+invented.)*
 
 ## What it does
+
+### The manager
 
 - **Shows every receiver's channel and signal state**, grouped by the
   transmitter it is meant to be watching. Distinguishes *wrong channel* from
@@ -60,6 +75,21 @@ blurred.)*
   factory-default unit: name, channel, address, reboot, and adopt once it
   answers at its new address.
 - **Backup and restore** the whole configuration, and an optional login.
+
+### The streamer
+
+- **Renders any URL** on a virtual display and streams it to a channel as
+  H.264 over multicast — replacing a PC wired to a transmitter.
+- **A live thumbnail per channel**, taken through the same pipeline the stream
+  uses, so you can see what is on a screen without walking to it.
+- **Health from the encoder itself** — frames per second, pace, and dropped
+  frames — because with several channels running the question stops being
+  *is it up* and becomes *which one is falling behind*.
+- **systemd owns the streams**; the web UI only starts, stops and restarts
+  them. It can crash or be upgraded without interrupting a frame, and a
+  stream comes back by itself after a reboot.
+
+See [streamer/README.md](streamer/README.md) to run it.
 
 ## Quick start
 
@@ -169,32 +199,56 @@ The full account is in [docs/protocol.md](docs/protocol.md). The essentials:
 
 ## Layout
 
+Two products in one repository, deployed independently: the manager installs
+from the root, the streamer from `streamer/`. A pull on either machine brings
+both down and only one gets installed.
+
 ```
-run.py                      entry point
-config.example.json         copy to config.json
-devices.example.txt         copy to devices.txt: your "<ip> <name>" inventory
-eclermanager/veo.py         the control protocol and its quirks
-eclermanager/config.py      config load / validate / save
-eclermanager/discovery.py   network sweep, and "is this really a VEO?"
-eclermanager/poller.py      polling, drift detection, self-healing, actions
-eclermanager/server.py      JSON API, static files, login gate
-eclermanager/auth.py        password hashing and signed session cookies
-eclermanager/static/        the dashboard and login page
-deploy/                     systemd units, install and update scripts
-tools/                      see docs/usage.md and docs/troubleshooting.md
-tests/smoke_dashboard.js    runs the dashboard's JS against a stubbed DOM
-tests/test_veo.py           188 tests, no hardware needed
+run.py                        manager entry point
+eclermanager/veo.py           the control protocol and its quirks
+eclermanager/config.py        config load / validate / save
+eclermanager/discovery.py     network sweep, and "is this really a VEO?"
+eclermanager/poller.py        polling, drift detection, self-healing, actions
+eclermanager/server.py        JSON API, static files, login gate
+eclermanager/auth.py          password hashing and signed session cookies
+eclermanager/static/          the dashboard and login page
+deploy/                       systemd units, install and update scripts
+tools/                        see docs/usage.md and docs/troubleshooting.md
+tests/
+
+streamer/run.py               streamer web service
+streamer/stream.py            what systemd runs, one instance per channel
+streamer/eclerstreamer/       config, systemd control, API, UI
+streamer/tools/teststream.py  builds and runs the ffmpeg pipeline
+streamer/tools/pagesource.sh  puts a page on a virtual display
+streamer/deploy/              units, sudo rule, installer
+streamer/tests/
 ```
 
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests            # manager
+node tests/smoke_dashboard.js                    # its dashboard's JS
+
+python3 -m unittest discover -s streamer/tests   # streamer
+node streamer/tests/smoke_ui.js                  # its page's JS
 ```
 
-They cover the protocol quirks above against emulated devices that reproduce
-them — including a unit that rejects CRLF, one that is slow to answer, and one
-whose replies would shift by a command under timing-based framing.
+No hardware needed. The manager's cover the protocol quirks above against
+emulated devices that reproduce them — including a unit that rejects CRLF, one
+that is slow to answer, and one whose replies would shift by a command under
+timing-based framing.
+
+The streamer's pin the settings that were expensive to find — constant-rate
+output, the quality floor, no B-frames, the pacing rules — and the systemd
+directives that broke it quietly: a sandbox that made its config read-only, one
+that stopped it reaching systemd at all, and a restart policy that looped on a
+misconfiguration for ever.
+
+Both JavaScript smoke tests run the real page against a stubbed DOM and fire
+every button, because `node --check` proves only that a file parses, not that a
+handler exists.
 
 ## Licence
 
