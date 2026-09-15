@@ -56,7 +56,12 @@ done
 die() { echo "✗ $*" >&2; exit 1; }
 step() { echo; echo "→ $*"; }
 
-PIDFILE="/run/pagesource-${DISPLAY_NUM#:}.pids"
+# /run is root-owned, so a service account cannot write there directly.
+# systemd's RuntimeDirectory= makes it a subdirectory owned by the unit's
+# user, and PAGESOURCE_PID_DIR points here at it. Falls back to /run so
+# running this by hand as root still behaves as it always did.
+PID_DIR="${PAGESOURCE_PID_DIR:-/run}"
+PIDFILE="$PID_DIR/pagesource-${DISPLAY_NUM#:}.pids"
 if [[ "$USE_KIOSK" == true ]]; then
     KIOSK_FLAGS="--kiosk"
     APP_FLAG=""            # the URL is passed positionally in kiosk mode

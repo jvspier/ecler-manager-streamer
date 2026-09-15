@@ -137,6 +137,18 @@ class TestUnitFiles(unittest.TestCase):
         self.assertIn("ProtectSystem=full", unit)
         self.assertIn("ReadWritePaths=/etc/eclerstreamer", unit)
 
+    def test_units_give_pagesource_somewhere_writable(self):
+        """/run is root-owned; the service account cannot write there."""
+        for name in ("dashboard-stream@.service", "eclerstreamer.service"):
+            unit = self._unit(name)
+            with self.subTest(unit=name):
+                self.assertIn("RuntimeDirectory=eclerstreamer", unit)
+                self.assertIn("PAGESOURCE_PID_DIR=/run/eclerstreamer", unit)
+                # And never /tmp, which is tmpfs on Debian 13: four browser
+                # profiles and their logs would sit in RAM.
+                self.assertIn("PAGESOURCE_RUNTIME_DIR=/var/lib/eclerstreamer/run",
+                              unit)
+
     def test_misconfiguration_does_not_restart_for_ever(self):
         """stream.py exits 2 for what a restart cannot fix."""
         self.assertIn("RestartPreventExitStatus=2",

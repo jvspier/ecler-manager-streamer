@@ -20,6 +20,12 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
 Environment=HOME=/var/lib/eclerstreamer
 Environment=PAGESOURCE_RUNTIME_DIR=/var/lib/eclerstreamer/run
+Environment=PAGESOURCE_PID_DIR=/run/eclerstreamer
+
+# Creates /run/eclerstreamer owned by this unit's user. Preserve=yes so
+# stopping one channel does not pull the directory out from under the others.
+RuntimeDirectory=eclerstreamer
+RuntimeDirectoryPreserve=yes
 EnvironmentFile=-/etc/eclerstreamer/eclerstreamer.env
 
 # NOT NoNewPrivileges: it and sudo are mutually exclusive by definition --
