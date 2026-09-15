@@ -189,6 +189,11 @@ async function api(path, options) {
 // first. Skipping the render instead would leave stale status on screen.
 function captureDrafts() {
   for (const input of document.querySelectorAll("input[id]")) {
+    // Skip anything inside a collapsed panel. Those inputs exist in the DOM
+    // but have never been filled, so capturing their empty value records it
+    // as a draft the user typed -- and the panel can then never populate
+    // itself, because filling only happens when no draft exists.
+    if (input.closest("[hidden]")) continue;
     state.draft[input.id] = input.value;
   }
 }
