@@ -22,7 +22,11 @@ Environment=HOME=/var/lib/eclerstreamer
 Environment=PAGESOURCE_RUNTIME_DIR=/var/lib/eclerstreamer/run
 EnvironmentFile=-/etc/eclerstreamer/eclerstreamer.env
 
-NoNewPrivileges=true
+# NOT NoNewPrivileges: it and sudo are mutually exclusive by definition --
+# sudo works by gaining privilege, which is exactly what the flag forbids, and
+# it fails with "if sudo is running in a container, you may need to adjust the
+# container configuration to disable the flag", which names neither sudo nor
+# systemd as the cause. The stream units keep the flag; they never call sudo.
 ProtectSystem=full
 ProtectHome=true
 # ProtectSystem=full mounts /etc read-only, and this service writes its own

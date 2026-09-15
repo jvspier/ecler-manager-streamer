@@ -119,6 +119,30 @@ class TestRunner(unittest.TestCase):
         self.assertIn("disabled", done.stderr)
 
 
+class TestUnitFiles(unittest.TestCase):
+    """Directives that quietly break the service, pinned so they stay gone."""
+
+    def _unit(self, name: str) -> str:
+        return (ROOT / "deploy" / name).read_text()
+
+    def test_web_service_does_not_set_nonewprivileges(self):
+        """It and sudo are mutually exclusive: sudo works by gaining privilege."""
+        body = "\n".join(line for line in self._unit("eclerstreamer.service").splitlines()
+                          if not line.lstrip().startswith("#"))
+        self.assertNotIn("NoNewPrivileges", body)
+
+    def test_web_service_can_write_its_own_config(self):
+        """ProtectSystem=full mounts /etc read-only; the service rewrites it."""
+        unit = self._unit("eclerstreamer.service")
+        self.assertIn("ProtectSystem=full", unit)
+        self.assertIn("ReadWritePaths=/etc/eclerstreamer", unit)
+
+    def test_misconfiguration_does_not_restart_for_ever(self):
+        """stream.py exits 2 for what a restart cannot fix."""
+        self.assertIn("RestartPreventExitStatus=2",
+                      self._unit("dashboard-stream@.service"))
+
+
 class TestHttp(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
