@@ -96,6 +96,11 @@
           font-size: 11.5px; cursor: pointer; }
   .link:hover:not(:disabled) { color: var(--accent); background: none;
                                text-decoration: underline; text-underline-offset: 3px; }
+  /* A settings form does not want to be 2000px wide, and prose does not want
+     to be monospace -- that face is for addresses and numbers. */
+  #host-panel { max-width: 680px; }
+  #host-panel .hint { font-family: var(--sans); font-size: 11.5px;
+                      color: var(--muted); white-space: normal; margin-top: 5px; }
   [hidden] { display: none !important; }
 
   #toasts { position: fixed; right: 20px; bottom: 20px; display: flex;
@@ -127,7 +132,7 @@
       <div style="grid-column:1/-1">
         <label for="local_addr">This host's address on the TV VLAN</label>
         <input id="local_addr" placeholder="10.52.21.200">
-        <div class="sub" style="margin-top:5px;white-space:normal">
+        <div class="hint">
           Without it, multicast leaves by the default route — the management
           VLAN — and no receiver ever sees the stream. There is no error
           anywhere when this is wrong; the screens simply say "waiting for
@@ -140,7 +145,7 @@
         <input id="manager_url" placeholder="http://10.0.0.1:8477"></div>
       <div class="row" style="grid-column:1/-1">
         <button data-act="save-host">Save host settings</button>
-        <span class="sub">Restart a stream to apply.</span>
+        <span class="hint" style="margin:0">Restart a stream to apply.</span>
       </div>
     </div>
   </div>
