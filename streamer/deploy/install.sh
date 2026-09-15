@@ -27,6 +27,15 @@ done
 command -v chromium >/dev/null || command -v chromium-browser >/dev/null \
     || die "no chromium found: apt-get install -y chromium"
 
+# The web UI reaches systemd through sudo, so the package is a hard
+# dependency -- and a minimal Debian does not have it. Checked here rather
+# than at the sudoers step, which is most of the way through the install.
+VISUDO="$(command -v visudo || true)"
+[[ -z "$VISUDO" && -x /usr/sbin/visudo ]] && VISUDO=/usr/sbin/visudo
+command -v sudo >/dev/null && [[ -n "$VISUDO" ]] \
+    || die "sudo is not installed, and the web UI needs it to start and stop
+  streams:  apt-get install -y sudo"
+
 step "Service account"
 if ! id -u "$USER" >/dev/null 2>&1; then
     useradd --system --home-dir "$STATE_DIR" --create-home \
@@ -72,12 +81,12 @@ step "systemd units"
 install -m 0644 "$SRC/deploy/dashboard-stream@.service" /etc/systemd/system/
 install -m 0644 "$SRC/deploy/eclerstreamer.service" /etc/systemd/system/
 
-step "sudo rule for the three stream verbs"
+step "sudo rule for the five stream verbs"
 # Validate before installing: a broken sudoers file locks everyone out of sudo,
 # so it is checked in place and only moved if visudo accepts it.
 tmp_rule="$(mktemp)"
 cp "$SRC/deploy/eclerstreamer.sudoers" "$tmp_rule"
-if visudo -cqf "$tmp_rule"; then
+if "$VISUDO" -cqf "$tmp_rule"; then
     install -m 0440 -o root -g root "$tmp_rule" /etc/sudoers.d/eclerstreamer
     echo "  installed ✓"
 else
