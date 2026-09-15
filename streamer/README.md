@@ -25,12 +25,18 @@ whole reason for the split.
 On a Debian host with a leg on the TV VLAN:
 
 ```bash
-apt-get install -y python3 ffmpeg xvfb chromium git \
+apt-get install -y python3 ffmpeg xvfb chromium git sudo \
                    fonts-liberation fonts-dejavu-core fonts-noto-color-emoji
 git clone <repo> /root/ecler && bash /root/ecler/streamer/deploy/install.sh
 ```
 
-Then set `local_addr` in `/etc/eclerstreamer/config.json` to this host's
+`sudo` is in that list on purpose and a minimal Debian install does not have
+it: the web service runs unprivileged and reaches systemd through a rule in
+`/etc/sudoers.d/eclerstreamer`, scoped to five verbs on `dashboard-stream@*`
+and nothing else. The service account gains no other privilege.
+
+Then set `local_addr` in the UI's **Host settings**, or in
+`/etc/eclerstreamer/config.json` to this host's
 address on the TV VLAN. Without it multicast leaves by the default route,
 which is the management VLAN, and the receivers never see it — with no error
 anywhere. It is the single most common way to get a silent failure here.
