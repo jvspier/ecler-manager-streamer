@@ -297,6 +297,19 @@ def parse_bitrate(value: str) -> int:
 def build_command(args: argparse.Namespace) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel]
 
+    if not sys.stdout.isatty():
+        # ffmpeg's normal status line is redrawn with carriage returns and no
+        # newline, which journald reads as one endless line and renders as
+        # "[47.9K blob data]". Under a service that throws away the only
+        # readout that says whether the encoder is keeping up -- speed=,
+        # fps= -- which is the signal that found most of this week's bugs.
+        #
+        # -progress writes the same numbers as key=value lines with newlines,
+        # so the journal stays readable and greppable. Only when not on a
+        # terminal: interactively the live redraw is the nicer thing.
+        cmd += ["-nostats", "-progress", "pipe:1",
+                "-stats_period", str(args.stats_seconds)]
+
     if args.capture_display:
         # NOT -re here. x11grab is a live input that already paces itself at
         # -framerate; -re asks ffmpeg to throttle reading to the input's own
@@ -506,6 +519,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "declared H.264 level allows, which makes a "
                              "hardware decoder tear on photographic slides. "
                              "0 disables it")
+    parser.add_argument("--stats-seconds", type=float, default=30.0,
+                        metavar="N",
+                        help="how often to report progress when not on a "
+                             "terminal (default 30). Needs ffmpeg 5.0+")
     parser.add_argument("--no-pacing", action="store_true",
                         help="do not pace the bytes onto the wire. ffmpeg "
                              "otherwise writes a whole frame's packets back "

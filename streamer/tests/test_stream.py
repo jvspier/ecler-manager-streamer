@@ -101,6 +101,38 @@ class TestStreamPacing(unittest.TestCase):
                            "--no-pacing"])
         self.assertNotIn("burst_bits", cmd[-1])
 
+    def test_progress_is_journal_friendly_when_not_on_a_terminal(self):
+        """ffmpeg's redrawn status line reaches journald as one blob."""
+        import io
+        import teststream
+        real = sys.stdout
+        try:
+            sys.stdout = io.StringIO()          # not a tty
+            cmd = self._build(["--group", "239.255.42.47",
+                               "--from-display", ":99"])
+        finally:
+            sys.stdout = real
+        self.assertIn("-nostats", cmd)
+        self.assertEqual(cmd[cmd.index("-progress") + 1], "pipe:1")
+
+    def test_a_terminal_keeps_the_live_status_line(self):
+        import io
+        import teststream
+
+        class Tty(io.StringIO):
+            def isatty(self):
+                return True
+
+        real = sys.stdout
+        try:
+            sys.stdout = Tty()
+            cmd = self._build(["--group", "239.255.42.47",
+                               "--from-display", ":99"])
+        finally:
+            sys.stdout = real
+        self.assertNotIn("-progress", cmd)
+        self.assertNotIn("-nostats", cmd)
+
     def test_parse_bitrate_suffixes(self):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
         import teststream
