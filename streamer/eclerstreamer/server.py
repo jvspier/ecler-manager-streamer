@@ -84,6 +84,7 @@ class Handler(BaseHTTPRequestHandler):
     auth: Auth
     previews: Previews
     lock: threading.Lock
+    _body: bytes = b""
 
     # --- plumbing --------------------------------------------------------
     def log_message(self, fmt: str, *args) -> None:
@@ -109,6 +110,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _take_body(self) -> bytes:
+        """Read the whole request body exactly once, always.
+
+        This has to happen for every POST, not only the ones that want a
+        body. On a keep-alive connection an unread body stays in the socket
+        and the next request is parsed starting from it -- so a POST whose
+        handler ignored its "{}" made the following GET arrive as a method
+        called "{}GET", answered with 501 Not Implemented. The symptom lands
+        on an unrelated request, which makes it very hard to place.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return b""
+        return self.rfile.read(min(length, MAX_BODY_BYTES))
+
     def _read_json_body(self) -> dict:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -116,10 +135,11 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.BAD_REQUEST, "bad Content-Length") from exc
         if length > MAX_BODY_BYTES:
             raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "body too large")
-        if length <= 0:
+        raw = self._body
+        if not raw:
             return {}
         try:
-            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            data = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ApiError(HTTPStatus.BAD_REQUEST, f"invalid JSON: {exc}") from exc
         if not isinstance(data, dict):
@@ -216,6 +236,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
+        # Before any dispatch, so no handler can leave one behind.
+        self._body = self._take_body()
         try:
             if path == "/login":
                 return self._do_login()
@@ -338,8 +360,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _do_login(self) -> None:
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        raw = self.rfile.read(min(length, MAX_BODY_BYTES)).decode("utf-8", "replace")
+        raw = self._body.decode("utf-8", "replace")
         fields = dict(
             (part.split("=", 1) + [""])[:2] for part in raw.split("&") if part)
         from urllib.parse import unquote_plus
