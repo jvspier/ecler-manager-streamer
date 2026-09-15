@@ -204,7 +204,8 @@ class Handler(BaseHTTPRequestHandler):
                 dict(d.to_dict(),
                      display_name=d.display_name,
                      multicast=config_mod.multicast_for(d.channel),
-                     status=control.status(d.channel))
+                     status=control.status(d.channel),
+                     progress=control.progress(d.channel))
                 for d in cfg.dashboards
             ],
             "server_time": time.time(),

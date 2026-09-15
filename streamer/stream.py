@@ -57,6 +57,17 @@ def main(argv: list[str] | None = None) -> int:
         log.error("channel %s is disabled in the config", args.channel)
         return 2
 
+    # Somewhere the web service can read the encoder's own numbers from.
+    # /run is tmpfs and cleared on boot, which suits a file that is rewritten
+    # from scratch on every restart anyway.
+    run_dir = Path(os.environ.get("ECLERSTREAMER_RUN_DIR", "/run/eclerstreamer"))
+    progress = run_dir / f"progress-{dash.channel}.txt"
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log.warning("no progress file (%s); the UI will show less detail", exc)
+        progress = None
+
     teststream = HERE / "tools" / "teststream.py"
     command = [
         sys.executable, str(teststream),
@@ -69,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         "--bitrate", dash.bitrate,
         "--qmin", str(cfg.qmin),
     ]
+    if progress is not None:
+        command += ["--progress-file", str(progress)]
     if cfg.no_bframes:
         command.append("--no-bframes")
     if cfg.local_addr:

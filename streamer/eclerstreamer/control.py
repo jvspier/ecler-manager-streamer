@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from pathlib import Path
 import subprocess
 
 log = logging.getLogger(__name__)
@@ -66,6 +67,38 @@ def status(channel: int) -> dict:
         "pid": int(values.get("MainPID") or 0),
         "at_boot": values.get("UnitFileState", "") == "enabled",
     }
+
+
+# ffmpeg appends a block of key=value lines every stats period, so the last
+# value of each key is the current one. Reading only the tail keeps this cheap
+# however long the stream has been up.
+PROGRESS_TAIL_BYTES = 4096
+_PROGRESS_KEYS = ("fps", "speed", "bitrate", "drop_frames", "dup_frames",
+                  "out_time", "frame")
+
+
+def progress(channel: int, run_dir: str = "/run/eclerstreamer") -> dict:
+    """The encoder's own numbers, or {} if it is not writing any.
+
+    This is what turns "the process is alive" into "this stream is keeping
+    up". drop_frames matters more than speed: speed reports pace, drops
+    report loss.
+    """
+    path = Path(run_dir) / f"progress-{int(channel)}.txt"
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - PROGRESS_TAIL_BYTES))
+            tail = handle.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return {}
+
+    found: dict[str, str] = {}
+    for line in tail.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key in _PROGRESS_KEYS:
+            found[key] = value.strip()
+    return found
 
 
 def act(channel: int, action: str) -> tuple[bool, str]:

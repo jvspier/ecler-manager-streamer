@@ -220,6 +220,24 @@ function statusChips(dash) {
   } else {
     chips.push('<span class="chip warn">stopped</span>');
   }
+  // The encoder's own numbers. With one stream "streaming" is enough; with
+  // four the question is which one is falling behind, and only these answer
+  // it. drop_frames matters most: speed reports pace, drops report loss.
+  const p = dash.progress || {};
+  if (s.active === "active" && p.fps) {
+    chips.push(`<span class="chip">${Number(p.fps).toFixed(0)} fps</span>`);
+  }
+  if (s.active === "active" && p.speed) {
+    const pace = parseFloat(p.speed);
+    // Below about 0.95 the encoder is not keeping up with real time. Slightly
+    // under 1.0 is normal: it is a cumulative average and the first seconds,
+    // while the browser was still painting, never come back out of it.
+    chips.push(`<span class="chip${pace && pace < 0.95 ? " warn" : ""}">${esc(p.speed)}</span>`);
+  }
+  const dropped = Number(p.drop_frames || 0);
+  if (dropped > 0) {
+    chips.push(`<span class="chip bad">${dropped} dropped</span>`);
+  }
   if (s.restarts) chips.push(`<span class="chip warn">${s.restarts} restarts</span>`);
   if (dash.enabled && !s.at_boot) {
     chips.push('<span class="chip warn">not after a reboot</span>');

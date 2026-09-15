@@ -155,6 +155,31 @@ class TestUnitFiles(unittest.TestCase):
                       self._unit("dashboard-stream@.service"))
 
 
+class TestProgress(unittest.TestCase):
+    """Reading the encoder's own numbers out of ffmpeg's -progress file."""
+
+    def test_last_value_of_each_key_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "progress-5.txt").write_text(
+                "fps=30.0\nspeed=0.900x\ndrop_frames=0\nprogress=continue\n"
+                "fps=29.60\nspeed=0.998x\ndrop_frames=2\nprogress=continue\n")
+            found = control.progress(5, tmp)
+        self.assertEqual(found["speed"], "0.998x")
+        self.assertEqual(found["drop_frames"], "2")
+
+    def test_missing_file_is_not_an_error(self):
+        """A stream that is not running has no progress, which is fine."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(control.progress(9, tmp), {})
+
+    def test_only_the_tail_is_read(self):
+        """The file grows for as long as the stream runs."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "progress-5.txt")
+            path.write_text("speed=0.1x\n" * 20000 + "speed=1.002x\n")
+            self.assertEqual(control.progress(5, tmp)["speed"], "1.002x")
+
+
 class TestHttp(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

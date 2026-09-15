@@ -297,7 +297,14 @@ def parse_bitrate(value: str) -> int:
 def build_command(args: argparse.Namespace) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel]
 
-    if not sys.stdout.isatty():
+    if args.progress_file:
+        # To a file rather than the journal, so the web UI can read the
+        # encoder's own numbers instead of inferring health from "the process
+        # is alive". ffmpeg truncates this on open, so it resets every restart
+        # and cannot grow without bound.
+        cmd += ["-nostats", "-progress", args.progress_file,
+                "-stats_period", str(args.stats_seconds)]
+    elif not sys.stdout.isatty():
         # ffmpeg's normal status line is redrawn with carriage returns and no
         # newline, which journald reads as one endless line and renders as
         # "[47.9K blob data]". Under a service that throws away the only
@@ -519,6 +526,9 @@ def build_parser() -> argparse.ArgumentParser:
                              "declared H.264 level allows, which makes a "
                              "hardware decoder tear on photographic slides. "
                              "0 disables it")
+    parser.add_argument("--progress-file", default=None, metavar="PATH",
+                        help="write ffmpeg's progress here as key=value "
+                             "lines, for something else to read")
     parser.add_argument("--stats-seconds", type=float, default=30.0,
                         metavar="N",
                         help="how often to report progress when not on a "
