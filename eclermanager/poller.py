@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -101,7 +102,14 @@ class Poller:
         self.events: deque[dict] = deque(maxlen=MAX_EVENTS)
         self.discovered: list[dict] = []
         self.discovery_running = False
+        # Seeded with the start time, not None. Left unset, a configured
+        # interval made `(None or 0) + interval` a moment in 1970, so a full
+        # sweep began within seconds of every service start or restart --
+        # and the value is never persisted, so every restart did it again.
+        # A sweep of a /16 once knocked every receiver in the building off
+        # its multicast stream for about 35 seconds.
         self.last_discovery: float | None = None
+        self._started_at = time.time()
         self.discovery_message = ""
         self.discovery_scanned = 0
         self.discovery_error = ""
@@ -152,10 +160,16 @@ class Poller:
         interval = self.config.discovery_interval_hours
         if interval <= 0 or not self.config.discovery_ranges:
             return
-        due = (self.last_discovery or 0) + interval * 3600
+        due = (self.last_discovery or self._started_at) + interval * 3600
         if time.time() < due:
             return
-        self.discover()
+        # Through the guarded entry point, not discover(): the scheduled path
+        # skipped the size check that the manual one applies, so a range that
+        # the dashboard would refuse was swept automatically instead.
+        try:
+            self.start_discovery()
+        except ValueError as exc:
+            log.warning("scheduled scan refused: %s", exc)
 
     # --- polling ---------------------------------------------------------
     def poll_once(self) -> None:
@@ -1158,8 +1172,19 @@ def _slug(text: str) -> str:
 
 
 def _sort_key(receiver: Receiver) -> tuple:
-    """Sort naturally so "TV 2" precedes "TV 10"."""
-    import re
+    """Sort naturally so "TV 2" precedes "TV 10".
 
+    Every part is tagged with its type before comparison. Without that, a name
+    beginning with a digit yields a tuple starting with an int while its
+    neighbour's starts with a str, and Python refuses to order the two --
+    TypeError out of sorted(), a 500 from /api/state, and a dashboard showing
+    nothing at all.
+
+    That failure was permanent, not transient: the rename is written to
+    config.json before the sort is ever attempted, so the dashboard stayed
+    dead across restarts and could only be recovered by editing the file by
+    hand. "2nd floor canteen" was enough to do it.
+    """
     parts = re.split(r"(\d+)", receiver.name)
-    return tuple(int(p) if p.isdigit() else p.lower() for p in parts if p != "")
+    return tuple((0, int(part), "") if part.isdigit() else (1, 0, part.lower())
+                 for part in parts if part != "")

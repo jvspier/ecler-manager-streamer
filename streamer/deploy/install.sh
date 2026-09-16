@@ -17,6 +17,14 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 die() { echo "✗ $*" >&2; exit 1; }
 step() { echo; echo "→ $*"; }
 
+ALLOW_NO_AUTH=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --allow-no-auth) ALLOW_NO_AUTH=true; shift ;;
+        *) die "unknown option: $1" ;;
+    esac
+done
+
 [[ $EUID -eq 0 ]] || die "run as root"
 command -v python3 >/dev/null || die "python3 is not installed"
 
@@ -102,12 +110,38 @@ rm -f "$tmp_rule"
 
 systemctl daemon-reload
 systemctl enable eclerstreamer.service
-# restart, not "enable --now": that starts a stopped unit but leaves a running
-# one alone, so re-running the installer would quietly keep serving the old
-# code and the old sandbox -- which looks exactly like the fix not working.
-systemctl restart eclerstreamer.service
+
+# Do not start it without a login. The unit binds 0.0.0.0:8478, and this
+# service can stop every screen in a building and set the URLs a browser then
+# renders -- so a fresh install that starts before credentials exist is a
+# window, however short, in which anyone on the network has all of that.
+# Pass --allow-no-auth to override deliberately (a lab, an isolated VLAN).
+if [[ -s "$CONF_DIR/eclerstreamer.env" || "$ALLOW_NO_AUTH" == true ]]; then
+    # restart, not "enable --now": that starts a stopped unit but leaves a
+    # running one alone, so re-running the installer would quietly keep
+    # serving the old code -- which looks exactly like a fix not working.
+    systemctl restart eclerstreamer.service
+    STARTED=true
+else
+    STARTED=false
+fi
 
 echo
+if [[ "$STARTED" != true ]]; then
+    echo "✓ installed, and deliberately NOT started: there is no login yet."
+    echo
+    echo "  This service can stop every screen in the building, and it binds"
+    echo "  to every interface. Set a password, then start it:"
+    echo
+    echo "    python3 $SRC/tools/setpassword.py --user <name> --owner $USER"
+    echo "    systemctl start eclerstreamer"
+    echo
+    echo "  Or re-run with --allow-no-auth if this network is genuinely yours"
+    echo "  alone."
+    echo
+    exit 0
+fi
+
 echo "✓ installed."
 echo
 echo "  Web UI:   http://$(hostname -I | awk '{print $1}'):8478/"

@@ -168,6 +168,10 @@ esac
 
 [[ -n "$URL" ]] || die "--url is required"
 [[ "$URL" =~ ^https?:// ]] || die "--url must start with http:// or https://"
+# No whitespace: a URL is a single argument, and one that is not would become
+# extra browser flags. Belt and braces -- the array quoting below already
+# prevents it, but this refuses the input rather than passing it on.
+[[ "$URL" =~ [[:space:]] ]] && die "--url must not contain whitespace"
 [[ "$SIZE" =~ ^[0-9]+x[0-9]+$ ]] || die "--size must look like 1920x1080"
 [[ "$DISPLAY_NUM" =~ ^:[0-9]+$ ]] || die "--display must look like :99"
 
@@ -300,19 +304,28 @@ echo "  $URL"
 # looked, with a log full of dbus noise and no cause in it. The browser had
 # never crashed at all. setsid puts it in its own session, where the terminal
 # cannot reach it.
-DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" \
-    --no-sandbox \
-    --no-zygote \
-    --disable-gpu \
-    --disable-dev-shm-usage \
-    --test-type \
-    --disable-background-timer-throttling \
-    --disable-backgrounding-occluded-windows \
-    --disable-renderer-backgrounding \
-    --window-size="$WIDTH,$HEIGHT" \
-    --user-data-dir="$PROFILE" \
-    $KIOSK_FLAGS \
-    $APP_FLAG \
+# An array, and every element quoted. Unquoted $APP_FLAG was word-split by
+# the shell, so a URL containing spaces became additional Chromium arguments:
+#   http://ok/ --remote-debugging-port=9222 --user-data-dir=/tmp/x
+# would have turned this into a remotely drivable browser on an AV host.
+# --load-extension, --proxy-server and --disable-web-security were equally
+# reachable. The URL arrives from a web form, so it is untrusted input.
+BROWSER_ARGS=(
+    --no-sandbox
+    --no-zygote
+    --disable-gpu
+    --disable-dev-shm-usage
+    --test-type
+    --disable-background-timer-throttling
+    --disable-backgrounding-occluded-windows
+    --disable-renderer-backgrounding
+    --window-size="$WIDTH,$HEIGHT"
+    --user-data-dir="$PROFILE"
+)
+[[ -n "$KIOSK_FLAGS" ]] && BROWSER_ARGS+=("$KIOSK_FLAGS")
+BROWSER_ARGS+=("$APP_FLAG")
+
+DISPLAY="$DISPLAY_NUM" setsid "$BROWSER" "${BROWSER_ARGS[@]}" \
     >>"$LOGFILE" 2>&1 </dev/null &
 BROWSER_PID=$!
 echo "$BROWSER_PID $BROWSER" >> "$PIDFILE"

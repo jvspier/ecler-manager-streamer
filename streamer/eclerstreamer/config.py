@@ -138,19 +138,22 @@ def parse(data: dict, path: Path = DEFAULT_PATH) -> Config:
         if channel in seen:
             raise ValueError(f"channel {channel} appears twice")
         seen.add(channel)
-        cfg.dashboards.append(Dashboard(
-            channel=channel,
-            name=str(entry.get("name", "") or ""),
-            url=str(entry.get("url", "") or ""),
-            enabled=bool(entry.get("enabled", True)),
-            display=(int(entry["display"]) if entry.get("display") is not None
-                     else None),
-            capture_fps=float(entry.get("capture_fps", 15.0)),
-            fps=int(entry.get("fps", 30)),
-            bitrate=str(entry.get("bitrate", "6M")),
-            size=str(entry.get("size", "1920x1080")),
-            note=str(entry.get("note", "") or ""),
-        ))
+        # Start from the dataclass and override only what the file supplies.
+        # Repeating the defaults here meant they drifted: capture_fps became
+        # 30 on the dataclass and stayed 15 here, so an older config -- or one
+        # hand-edited from the starter file -- loaded at half the intended
+        # capture rate and juddered, which is exactly what that change set out
+        # to prevent.
+        dash = Dashboard(channel=channel)
+        for key, cast in (("name", str), ("url", str), ("note", str),
+                          ("bitrate", str), ("size", str),
+                          ("enabled", bool), ("fps", int),
+                          ("capture_fps", float)):
+            if entry.get(key) is not None:
+                setattr(dash, key, cast(entry[key]))
+        if entry.get("display") is not None:
+            dash.display = int(entry["display"])
+        cfg.dashboards.append(dash)
     cfg.dashboards.sort(key=lambda d: d.channel)
     return cfg
 

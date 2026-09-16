@@ -155,6 +155,89 @@ class TestUnitFiles(unittest.TestCase):
                       self._unit("dashboard-stream@.service"))
 
 
+class TestInputValidation(unittest.TestCase):
+    """Everything a web form can send reaches either a browser command line
+    or an encoder, so it is checked where it enters."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "config.json"
+        self.path.write_text(json.dumps({
+            "dashboards": [{"channel": 5, "url": "https://x/", "enabled": True}]}))
+        self.server = make_server(self.path, "127.0.0.1", 0)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def _post(self, path, payload):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=json.dumps(payload).encode(), method="POST",
+            headers={"Content-Type": "application/json"})
+        return urllib.request.urlopen(request, timeout=5)
+
+    def _refused(self, path, payload):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self._post(path, payload)
+        return caught.exception.code
+
+    def test_a_url_with_spaces_is_refused(self):
+        """Word splitting would turn the rest into Chromium flags.
+
+        "http://ok/ --remote-debugging-port=9222" would have made the headless
+        browser remotely drivable on an AV host.
+        """
+        self.assertEqual(
+            self._refused("/api/dashboards/5",
+                          {"url": "http://ok/ --remote-debugging-port=9222"}),
+            400)
+
+    def test_a_non_http_url_is_refused(self):
+        self.assertEqual(
+            self._refused("/api/dashboards/5", {"url": "file:///etc/shadow"}), 400)
+        self.assertEqual(
+            self._refused("/api/config", {"manager_url": "javascript:alert(1)"}),
+            400)
+
+    def test_zero_fps_is_refused(self):
+        """It stored fine and then crash-looped the unit every ten seconds.
+
+        teststream divides by capture_fps; the ZeroDivisionError exited 1, so
+        RestartPreventExitStatus=2 did not catch it either.
+        """
+        self.assertEqual(self._refused("/api/dashboards/5", {"fps": 0}), 400)
+
+    def test_nonsense_bitrate_and_size_are_refused(self):
+        self.assertEqual(
+            self._refused("/api/dashboards/5", {"bitrate": "very fast"}), 400)
+        self.assertEqual(
+            self._refused("/api/dashboards/5", {"size": "huge"}), 400)
+
+    def test_sensible_settings_are_accepted(self):
+        self._post("/api/dashboards/5",
+                   {"fps": 25, "capture_fps": 5, "bitrate": "4M",
+                    "size": "1280x720", "url": "https://example.com/d"})
+        dash = config_mod.load(self.path).dashboard(5)
+        self.assertEqual((dash.fps, dash.capture_fps, dash.bitrate, dash.size),
+                         (25, 5.0, "4M", "1280x720"))
+
+    def test_deleting_disables_the_unit_as_well_as_stopping_it(self):
+        """Stopping alone left it enabled, so the next reboot started a
+        channel that no longer existed and the unit sat failed for ever."""
+        seen = []
+        original = control.act
+        control.act = lambda channel, action: (seen.append(action), (True, ""))[1]
+        try:
+            self._post("/api/dashboards/5/delete", {})
+        finally:
+            control.act = original
+        self.assertEqual(sorted(seen), ["disable", "stop"])
+
+
 class TestProgress(unittest.TestCase):
     """Reading the encoder's own numbers out of ffmpeg's -progress file."""
 

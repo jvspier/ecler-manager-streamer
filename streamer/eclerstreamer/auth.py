@@ -18,7 +18,7 @@ Configured entirely through the environment, so no secret ever lands in
     ECLER_SESSION_HOURS        how long a login lasts (default 12)
 
 Values may come from the real environment or from an env file
-(``/etc/eclermanager/eclermanager.env`` when deployed).  The environment wins.
+(``/etc/eclerstreamer/eclerstreamer.env`` when deployed).  The environment wins.
 
 Sessions are signed cookies rather than server-side state, so a restart does
 not log everyone out -- provided ``ECLER_SESSION_SECRET`` is set.  If it is
@@ -63,8 +63,15 @@ def valid_user(name: str) -> bool:
     return bool(USER_RE.match(name))
 
 
+# The streamer's own file, not the manager's. This was left pointing at
+# /etc/eclermanager/eclermanager.env when the module was copied, which
+# contradicted the docstring above and had two real consequences: running
+# run.py by hand started with NO login even though one was configured (the
+# unit works only because systemd injects the variables), and on a host
+# carrying both products the streamer would have accepted the manager's
+# credentials -- the exact boundary this separation exists to draw.
 DEFAULT_ENV_PATHS = (
-    Path("/etc/eclermanager/eclermanager.env"),
+    Path("/etc/eclerstreamer/eclerstreamer.env"),
     Path(__file__).resolve().parent.parent / ".env",
 )
 

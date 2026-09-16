@@ -2052,6 +2052,35 @@ class TestChannelTallies(unittest.TestCase):
         self.assertEqual(summary["by_expected_channel"], {"2": 1})
 
 
+class TestNaturalSort(unittest.TestCase):
+    """Sorting must survive any name a person can type into the rename box."""
+
+    def _names(self, names):
+        from eclermanager.poller import _sort_key
+        receivers = [config_mod.Receiver(id=f"rx-{i}", name=name, ip="10.0.2.1")
+                     for i, name in enumerate(names)]
+        return [r.name for r in sorted(receivers, key=_sort_key)]
+
+    def test_a_name_starting_with_a_digit_does_not_crash(self):
+        """This took the whole dashboard down, permanently.
+
+        Mixing int and str in the sort tuple raised TypeError out of sorted(),
+        so /api/state returned 500 and the page showed nothing. The rename was
+        saved to config.json first, so it survived restarts and could only be
+        undone by editing the file by hand.
+        """
+        self._names(["2nd floor canteen", "Canteen", "Reception"])
+
+    def test_numbers_still_sort_naturally(self):
+        self.assertEqual(self._names(["TV 10", "TV 2", "TV 1"]),
+                         ["TV 1", "TV 2", "TV 10"])
+
+    def test_mixed_names_are_ordered_deterministically(self):
+        first = self._names(["3 Gifts", "Aisle 1", "10 Bench", "Canteen"])
+        second = self._names(["Canteen", "10 Bench", "Aisle 1", "3 Gifts"])
+        self.assertEqual(first, second)
+
+
 class TestScheduledDiscovery(unittest.TestCase):
     """Periodic scanning, when an interval is configured."""
 
@@ -2079,19 +2108,52 @@ class TestScheduledDiscovery(unittest.TestCase):
         poller._maybe_discover()
         self.assertEqual(calls, [])
 
-    def test_runs_when_due(self):
+    def test_does_not_run_at_startup(self):
+        """The interval is counted from start, not from 1970.
+
+        last_discovery begins as None and is never persisted, so treating it
+        as 0 made a full sweep due the moment the service started -- and again
+        after every restart. A wide sweep once knocked every receiver in the
+        building off its multicast stream for about 35 seconds.
+        """
         poller = self._poller(discovery_ranges=["10.0.0.1-2"],
                               discovery_interval_hours=1)
         calls = []
-        poller.discover = lambda *a, **k: calls.append(1)
+        poller.start_discovery = lambda *a, **k: calls.append(1)
+        poller._maybe_discover()
+        self.assertEqual(calls, [])
+
+    def test_runs_once_the_interval_has_passed(self):
+        poller = self._poller(discovery_ranges=["10.0.0.1-2"],
+                              discovery_interval_hours=1)
+        calls = []
+        poller.start_discovery = lambda *a, **k: calls.append(1)
+        poller._started_at = time.time() - 3700
         poller._maybe_discover()
         self.assertEqual(len(calls), 1)
+
+    def test_goes_through_the_guarded_entry_point(self):
+        """The manual path refuses a sweep over 8192 addresses; so must this.
+
+        The scheduled path called discover() directly and skipped the check
+        entirely, so a range the dashboard would refuse was swept unattended.
+        """
+        poller = self._poller(discovery_ranges=["10.0.0.1-2"],
+                              discovery_interval_hours=1)
+        poller._started_at = time.time() - 3700
+        refused = []
+        def refuse(*a, **k):
+            refused.append(1)
+            raise ValueError("too many addresses")
+        poller.start_discovery = refuse
+        poller._maybe_discover()          # must not propagate
+        self.assertEqual(len(refused), 1)
 
     def test_does_not_run_again_before_the_interval(self):
         poller = self._poller(discovery_ranges=["10.0.0.1-2"],
                               discovery_interval_hours=1)
         calls = []
-        poller.discover = lambda *a, **k: calls.append(1)
+        poller.start_discovery = lambda *a, **k: calls.append(1)
         poller.last_discovery = time.time()
         poller._maybe_discover()
         self.assertEqual(calls, [])

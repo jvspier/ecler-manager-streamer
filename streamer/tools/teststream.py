@@ -76,11 +76,18 @@ def group_for_channel(channel: int, config_path: str | None) -> str | None:
     channel a transmitter is already using, since streaming to it would collide
     with a live dashboard.
     """
-    from eclermanager import veo
+    # The manager is a separate product and is not installed on a streamer
+    # host, so its bounds are a nice-to-have rather than a dependency. Without
+    # this fallback, --channel died with ModuleNotFoundError on exactly the
+    # machine the tool is meant to run on.
+    try:
+        from eclermanager import veo
+        low, high = veo.GROUP_ID_MIN, veo.GROUP_ID_MAX
+    except ImportError:
+        low, high = 0, 63
 
-    if not veo.GROUP_ID_MIN <= channel <= veo.GROUP_ID_MAX:
-        print(f"✗ channel {channel} is outside "
-              f"{veo.GROUP_ID_MIN}..{veo.GROUP_ID_MAX}", file=sys.stderr)
+    if not low <= channel <= high:
+        print(f"✗ channel {channel} is outside {low}..{high}", file=sys.stderr)
         return None
 
     in_use: dict[int, str] = {}
@@ -578,7 +585,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     pidfile = Path(f"/tmp/teststream-{args.port}.pid")
 
@@ -601,12 +609,6 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 2
     started_page = False
-    if args.url:
-        if not args.dry_run:
-            if not start_page(args.url, args.display, args.size):
-                return 1
-            started_page = True
-        args.capture_display = args.display
 
     if args.channel is not None:
         args.group = group_for_channel(args.channel, args.config)
@@ -633,6 +635,18 @@ def main(argv: list[str] | None = None) -> int:
               "  Read a transmitter's group with: tools/probe.py <transmitter-ip>",
               file=sys.stderr)
         return 2
+
+    # Everything that can refuse the run happens above this line. Starting
+    # the browser earlier meant five validation failures -- an unknown
+    # channel, an interface with no address, a group that is not multicast --
+    # each returned having just started an Xvfb and a Chromium that nothing
+    # would ever stop. One such orphan once ran for five days.
+    if args.url:
+        if not args.dry_run:
+            if not start_page(args.url, args.display, args.size):
+                return 1
+            started_page = True
+        args.capture_display = args.display
 
     if args.fps % args.capture_fps != 0:
         print(f"! {args.capture_fps} does not divide evenly into {args.fps}, so "

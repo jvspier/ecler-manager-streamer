@@ -335,7 +335,10 @@ function render() {
   } else {
     cards.replaceChildren(...list.map(card));
   }
-  const managerUrl = (state.data.config || {}).manager_url;
+  // http(s) only. The server enforces this, but a config edited by hand
+  // could still carry a javascript: URL, and this page controls live streams.
+  const raw = (state.data.config || {}).manager_url || "";
+  const managerUrl = /^https?:\/\//i.test(raw) ? raw : "";
   const link = document.getElementById("manager-link");
   link.hidden = !managerUrl;
   if (managerUrl) link.href = managerUrl;
