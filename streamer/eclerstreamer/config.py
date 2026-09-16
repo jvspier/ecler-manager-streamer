@@ -79,6 +79,11 @@ class Config:
     manager_url: str = ""
     qmin: int = 18
     no_bframes: bool = True
+    # Free text. Somewhere to keep the URLs of dashboards that are not
+    # currently assigned to a channel, and anything else worth not losing --
+    # these addresses change once every few years, which is exactly long
+    # enough to forget them.
+    notes: str = ""
     dashboards: list[Dashboard] = field(default_factory=list)
 
     def dashboard(self, channel: int) -> Dashboard | None:
@@ -88,7 +93,7 @@ class Config:
         return {
             "local_addr": self.local_addr, "interface": self.interface,
             "manager_url": self.manager_url, "qmin": self.qmin,
-            "no_bframes": self.no_bframes,
+            "no_bframes": self.no_bframes, "notes": self.notes,
             "dashboards": [d.to_dict() for d in self.dashboards],
         }
 
@@ -123,6 +128,7 @@ def parse(data: dict, path: Path = DEFAULT_PATH) -> Config:
     cfg.manager_url = str(data.get("manager_url", "") or "").rstrip("/")
     cfg.qmin = max(0, int(data.get("qmin", cfg.qmin)))
     cfg.no_bframes = bool(data.get("no_bframes", cfg.no_bframes))
+    cfg.notes = str(data.get("notes", "") or "")
 
     seen: set[int] = set()
     for entry in data.get("dashboards", []) or []:

@@ -58,6 +58,11 @@
                  border-radius: var(--r-md); padding: 8px 14px;
                  transition: color .14s, background .14s; }
   header.top a:hover { color: var(--text); background: var(--hover); }
+  textarea { font: inherit; font-size: 12.5px; color: var(--text);
+             background: var(--raised); border: 1px solid transparent;
+             border-radius: var(--r-md); padding: 8px 11px; width: 100%;
+             min-height: 96px; resize: vertical; line-height: 1.5; }
+  textarea:focus { outline: none; border-color: var(--accent); }
   input, select { font: inherit; font-size: 12.5px; color: var(--text);
                   background: var(--raised); border: 1px solid transparent;
                   border-radius: var(--r-md); padding: 8px 11px; width: 100%; }
@@ -157,6 +162,10 @@
         <input id="qmin" placeholder="18 if left empty"></div>
       <div><label for="manager_url">Manager URL (optional)</label>
         <input id="manager_url" placeholder="e.g. http://10.0.0.1:8477"></div>
+      <div style="grid-column:1/-1">
+        <label for="notes">Notes</label>
+        <textarea id="notes" placeholder="Dashboard URLs you may want later, and anything else worth not losing."></textarea>
+      </div>
       <div class="row" style="grid-column:1/-1">
         <button data-act="save-host">Save host settings</button>
         <span class="hint" style="margin:0">Restart a stream to apply.</span>
@@ -197,7 +206,7 @@ async function api(path, options) {
 // The 10s refresh re-renders everything, so anything half-typed is captured
 // first. Skipping the render instead would leave stale status on screen.
 function captureDrafts() {
-  for (const input of document.querySelectorAll("input[id]")) {
+  for (const input of document.querySelectorAll("input[id], textarea[id]")) {
     // Skip anything inside a collapsed panel. Those inputs exist in the DOM
     // but have never been filled, so capturing their empty value records it
     // as a draft the user typed -- and the panel can then never populate
@@ -304,6 +313,10 @@ function card(dash) {
           only for a still one — it caps how smooth motion can be.</div></div>
       <div><label for="fps-${dash.channel}">Output fps</label>
         <input id="fps-${dash.channel}" value="${esc(draftOr("fps-" + dash.channel, dash.fps))}"></div>
+      <div style="grid-column:1/-1">
+        <label for="note-${dash.channel}">Note</label>
+        <input id="note-${dash.channel}" placeholder="Why this channel is set up the way it is"
+               value="${esc(draftOr("note-" + dash.channel, dash.note))}"></div>
       <div class="row" style="grid-column:1/-1">
         <button data-act="save-settings" data-ch="${dash.channel}">Save settings</button>
         <span class="spacer"></span>
@@ -362,8 +375,10 @@ document.addEventListener("click", async (event) => {
         local_addr: document.getElementById("local_addr").value.trim(),
         manager_url: document.getElementById("manager_url").value.trim(),
         qmin: Number(document.getElementById("qmin").value || 18),
+        notes: document.getElementById("notes").value,
       })});
-      clearDrafts("local_addr"); clearDrafts("manager_url"); clearDrafts("qmin");
+      clearDrafts("local_addr"); clearDrafts("manager_url");
+      clearDrafts("qmin"); clearDrafts("notes");
       // Saving this empty is the failure the hint warns about, and it is
       // silent everywhere else, so say so here rather than report success.
       if (!document.getElementById("local_addr").value.trim()) {
@@ -394,9 +409,11 @@ document.addEventListener("click", async (event) => {
         bitrate: document.getElementById(`bitrate-${channel}`).value.trim(),
         capture_fps: Number(document.getElementById(`capture-${channel}`).value),
         fps: Number(document.getElementById(`fps-${channel}`).value),
+        note: document.getElementById(`note-${channel}`).value,
       });
       clearDrafts(`name-${channel}`); clearDrafts(`bitrate-${channel}`);
       clearDrafts(`capture-${channel}`); clearDrafts(`fps-${channel}`);
+      clearDrafts(`note-${channel}`);
       toast(`Channel ${channel}: settings saved. Restart to apply.`, "ok");
     } else if (action === "enable") {
       // One word, one meaning: on in the config, running now, and running
@@ -440,7 +457,8 @@ document.getElementById("host").addEventListener("click", () => {
 function fillHost() {
   const cfg = state.data.config || {};
   for (const [id, value] of Object.entries({
-        local_addr: cfg.local_addr, qmin: cfg.qmin, manager_url: cfg.manager_url })) {
+        local_addr: cfg.local_addr, qmin: cfg.qmin,
+        manager_url: cfg.manager_url, notes: cfg.notes })) {
     const input = document.getElementById(id);
     if (input && state.draft[id] === undefined) input.value = value ?? "";
   }

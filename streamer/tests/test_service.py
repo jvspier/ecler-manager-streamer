@@ -238,6 +238,16 @@ class TestHttp(unittest.TestCase):
         self.assertEqual(cfg.local_addr, "10.52.21.201")
         self.assertEqual(cfg.qmin, 20)
 
+    def test_notes_persist(self):
+        """Somewhere to keep URLs that are not on a channel right now."""
+        self._post("/api/config", {"notes": "spare: https://example.com/x"})
+        self.assertIn("example.com/x", config_mod.load(self.path).notes)
+
+    def test_a_dashboard_note_persists(self):
+        self._post("/api/dashboards/5", {"note": "fed by the old ChromeBox"})
+        self.assertEqual(config_mod.load(self.path).dashboard(5).note,
+                         "fed by the old ChromeBox")
+
     def test_unknown_channel_is_a_404(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self._post("/api/dashboards/9", {"url": "https://z/"})

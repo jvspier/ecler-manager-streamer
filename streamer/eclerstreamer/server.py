@@ -198,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
             "config": {
                 "local_addr": cfg.local_addr, "interface": cfg.interface,
                 "manager_url": cfg.manager_url, "qmin": cfg.qmin,
-                "no_bframes": cfg.no_bframes,
+                "no_bframes": cfg.no_bframes, "notes": cfg.notes,
             },
             "dashboards": [
                 dict(d.to_dict(),
@@ -268,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read_json_body()
         with self.lock:
             cfg = self._load()
-            for key in ("local_addr", "interface", "manager_url"):
+            for key in ("local_addr", "interface", "manager_url", "notes"):
                 if key in body:
                     setattr(cfg, key, str(body[key] or "").strip())
             if "qmin" in body and body["qmin"] is not None:
