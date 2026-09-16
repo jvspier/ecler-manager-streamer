@@ -51,12 +51,12 @@ class TestConfig(unittest.TestCase):
     def test_save_round_trips(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
-            cfg = config_mod.Config(path=path, local_addr="10.52.21.200")
+            cfg = config_mod.Config(path=path, local_addr="10.0.2.5")
             cfg.dashboards.append(config_mod.Dashboard(
                 channel=5, name="Campus", url="https://x/", bitrate="4M"))
             cfg.save()
             again = config_mod.load(path)
-            self.assertEqual(again.local_addr, "10.52.21.200")
+            self.assertEqual(again.local_addr, "10.0.2.5")
             self.assertEqual(again.dashboards[0].bitrate, "4M")
             self.assertEqual(again.dashboards[0].name, "Campus")
 
@@ -95,7 +95,7 @@ class TestRunner(unittest.TestCase):
     def test_builds_the_proven_command(self):
         done = self._dry_run(
             [{"channel": 5, "url": "https://x/", "enabled": True}],
-            local_addr="10.52.21.200")
+            local_addr="10.0.2.5")
         self.assertEqual(done.returncode, 0, done.stderr)
         out = done.stdout
         # The settings that were expensive to find: constant rate, the quality
@@ -104,7 +104,7 @@ class TestRunner(unittest.TestCase):
         self.assertIn("--group 239.255.42.47", out)
         self.assertIn("--qmin 18", out)
         self.assertIn("--no-bframes", out)
-        self.assertIn("--local-addr 10.52.21.200", out)
+        self.assertIn("--local-addr 10.0.2.5", out)
         self.assertIn("--display :105", out)
 
     def test_refuses_a_channel_with_no_url(self):
@@ -185,7 +185,7 @@ class TestHttp(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "config.json"
         self.path.write_text(json.dumps({
-            "local_addr": "10.52.21.200",
+            "local_addr": "10.0.2.5",
             "dashboards": [{"channel": 5, "name": "Campus",
                             "url": "https://x/", "enabled": True}]}))
         self.server = make_server(self.path, "127.0.0.1", 0)
@@ -233,9 +233,9 @@ class TestHttp(unittest.TestCase):
 
     def test_host_settings_are_writable(self):
         """local_addr is the commonest silent failure; it belongs in the UI."""
-        self._post("/api/config", {"local_addr": "10.52.21.201", "qmin": 20})
+        self._post("/api/config", {"local_addr": "10.0.2.6", "qmin": 20})
         cfg = config_mod.load(self.path)
-        self.assertEqual(cfg.local_addr, "10.52.21.201")
+        self.assertEqual(cfg.local_addr, "10.0.2.6")
         self.assertEqual(cfg.qmin, 20)
 
     def test_notes_persist(self):

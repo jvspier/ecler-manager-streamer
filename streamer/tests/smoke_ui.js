@@ -16,10 +16,10 @@ const HTML = path.join(__dirname, "..", "eclerstreamer", "static", "index.html")
 
 const STATE = {
   version: "0.1.0", systemd: true,
-  config: { local_addr: "10.52.21.200", interface: "", manager_url: "",
+  config: { local_addr: "10.0.2.5", interface: "", manager_url: "",
             qmin: 18, no_bframes: true },
   dashboards: [{
-    channel: 5, name: "Kantoor-test", url: "https://example.com/d",
+    channel: 5, name: "Reception board", url: "https://example.com/d",
     enabled: false, display: null, capture_fps: 15, fps: 30,
     bitrate: "6M", size: "1920x1080", note: "",
     display_name: ":105", multicast: "239.255.42.47",
