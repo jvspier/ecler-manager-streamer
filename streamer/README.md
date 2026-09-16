@@ -30,6 +30,20 @@ apt-get install -y python3 ffmpeg xvfb chromium git sudo \
 git clone <repo> /root/ecler && bash /root/ecler/streamer/deploy/install.sh
 ```
 
+**On a fresh minimal Debian, set DNS by hand and make it stick:**
+
+```bash
+echo "nameserver <your resolver>" > /etc/resolv.conf
+chattr +i /etc/resolv.conf
+```
+
+`dns-nameservers` in `/etc/network/interfaces` needs the `resolvconf` package,
+which a minimal install does not have — so it silently does nothing and every
+`apt-get` fails with "Temporary failure resolving". Writing the file directly
+works, but something during installation may overwrite it again; the immutable
+bit stops that. Nothing on a host with static interfaces and a fixed resolver
+legitimately needs to rewrite it.
+
 `sudo` is in that list on purpose and a minimal Debian install does not have
 it: the web service runs unprivileged and reaches systemd through a rule in
 `/etc/sudoers.d/eclerstreamer`, scoped to five verbs on `dashboard-stream@*`
