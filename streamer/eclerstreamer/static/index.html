@@ -51,6 +51,13 @@
   button.primary { color: #1A1D1D; background: var(--accent); font-weight: 650; }
   button.primary:hover:not(:disabled) { color: #1A1D1D; filter: brightness(1.06); }
   button.danger { color: var(--bad); }
+  /* A link, not an embed: the two tools stay separate on purpose, so that a
+     stray click in the one you use daily cannot reach a live stream. */
+  header.top a { font: inherit; font-size: 12.5px; color: var(--muted);
+                 text-decoration: none; background: var(--surface);
+                 border-radius: var(--r-md); padding: 8px 14px;
+                 transition: color .14s, background .14s; }
+  header.top a:hover { color: var(--text); background: var(--hover); }
   input, select { font: inherit; font-size: 12.5px; color: var(--text);
                   background: var(--raised); border: 1px solid transparent;
                   border-radius: var(--r-md); padding: 8px 11px; width: 100%; }
@@ -122,6 +129,8 @@
 <header class="top">
   <h1>Ecler Streamer<small id="clock"></small></h1>
   <div class="spacer"></div>
+  <a id="manager-link" hidden target="_blank" rel="noopener"
+     title="Open the Ecler Manager in a new tab">Manager</a>
   <button id="host">Host settings</button>
   <button id="add">Add dashboard</button>
   <button id="refresh" class="primary">Refresh</button>
@@ -147,7 +156,7 @@
       <div><label for="qmin">Quality floor (qmin)</label>
         <input id="qmin" placeholder="18 if left empty"></div>
       <div><label for="manager_url">Manager URL (optional)</label>
-        <input id="manager_url" placeholder="not used yet"></div>
+        <input id="manager_url" placeholder="e.g. http://10.0.0.1:8477"></div>
       <div class="row" style="grid-column:1/-1">
         <button data-act="save-host">Save host settings</button>
         <span class="hint" style="margin:0">Restart a stream to apply.</span>
@@ -313,6 +322,11 @@ function render() {
   } else {
     cards.replaceChildren(...list.map(card));
   }
+  const managerUrl = (state.data.config || {}).manager_url;
+  const link = document.getElementById("manager-link");
+  link.hidden = !managerUrl;
+  if (managerUrl) link.href = managerUrl;
+
   if (!document.getElementById("host-panel").hidden) fillHost();
   const when = new Date(state.data.server_time * 1000);
   document.getElementById("clock").textContent =
