@@ -1,9 +1,3 @@
-# HTTP API
-
-Everything the dashboard does is available directly, so any of it can be
-scripted or driven from another tool.
-
----
 
 ## HTTP API
 
