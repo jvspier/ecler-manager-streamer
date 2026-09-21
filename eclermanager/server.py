@@ -642,7 +642,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_static(self, relative: str) -> None:
         target = (STATIC_DIR / relative).resolve()
-        if not target.is_relative_to(STATIC_DIR) or not target.is_file():
+        # relative_to(), not is_relative_to(): the latter arrived in Python
+        # 3.9, and this is the only thing in either product that needed it.
+        # Same guarantee -- it raises ValueError when the resolved path has
+        # escaped the static directory, which is the traversal case.
+        try:
+            target.relative_to(STATIC_DIR)
+        except ValueError:
+            self._send_error_json(HTTPStatus.NOT_FOUND, "not found")
+            return
+        if not target.is_file():
             self._send_error_json(HTTPStatus.NOT_FOUND, "not found")
             return
         body = target.read_bytes()

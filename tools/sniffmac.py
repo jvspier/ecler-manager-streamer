@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         while time.monotonic() < deadline:
             try:
                 frame = sock.recv(65535)
-            except TimeoutError:
+            except socket.timeout:      # is TimeoutError only from 3.10
                 continue
             found = parse(frame)
             if not found:

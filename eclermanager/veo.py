@@ -258,7 +258,12 @@ class VeoSession:
             self._sock.settimeout(min(quiet if buf else first_byte, remaining))
             try:
                 chunk = self._sock.recv(4096)
-            except TimeoutError:
+            except socket.timeout:
+                # socket.timeout, not TimeoutError: the two are the same
+                # object only from Python 3.10. On 3.9 and earlier this is a
+                # plain OSError subclass, so `except TimeoutError` missed it,
+                # the handler below turned a slow reply into "unreachable",
+                # and any device that took a moment to answer read as offline.
                 text = strip_telnet_negotiation(bytes(buf)).decode("utf-8", "replace")
                 stripped = _PROMPT_PREFIX_RE.sub("", text, count=1)
                 if accept_bare_prompt or _PROMPT_RE.sub("", stripped).strip():

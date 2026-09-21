@@ -515,7 +515,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_static(self, relative: str) -> None:
         target = (STATIC_DIR / relative).resolve()
-        if not target.is_file() or STATIC_DIR.resolve() not in target.parents:
+        # Same guard as the manager's, written the same way: relative_to()
+        # raises when the resolved path has escaped the directory.
+        try:
+            target.relative_to(STATIC_DIR.resolve())
+        except ValueError:
+            return self._send_error_json(HTTPStatus.NOT_FOUND, "no such file")
+        if not target.is_file():
             return self._send_error_json(HTTPStatus.NOT_FOUND, "no such file")
         body = target.read_bytes()
         self.send_response(HTTPStatus.OK)

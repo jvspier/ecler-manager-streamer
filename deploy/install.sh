@@ -54,9 +54,9 @@ command -v python3 >/dev/null || {
     apt-get install -y --no-install-recommends python3
 }
 PYTHON_VERSION=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-python3 - <<'PY' || die "Python 3.11+ required, found $PYTHON_VERSION"
+python3 - <<'PY' || die "Python 3.8+ required, found $PYTHON_VERSION"
 import sys
-sys.exit(0 if sys.version_info >= (3, 11) else 1)
+sys.exit(0 if sys.version_info >= (3, 8) else 1)
 PY
 echo "  python3 $PYTHON_VERSION ✓"
 

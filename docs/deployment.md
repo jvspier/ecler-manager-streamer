@@ -374,7 +374,7 @@ the code in and runs the installer; `-y` skips the confirmation prompt.
 Without `--deploy` it prints the four commands to push the project in yourself.
 Either way the work inside the container is done by `deploy/install.sh`, which:
 
-- installs `python3` if missing and checks it is 3.11+;
+- installs `python3` if missing and checks it is 3.8+;
 - creates a system user `eclermanager`;
 - installs the code read-only to `/opt/eclermanager`;
 - puts your config at `/etc/eclermanager/config.json`, owned by the service user

@@ -12,8 +12,8 @@ which happens after a power event — is fixed by climbing to the unit and
 pressing its channel button. They are, however, on the network and speak a
 control protocol, so none of that is necessary.
 
-Pure Python 3.11+ standard library. No `pip install`, no build step, no
-dependencies. The streamer additionally needs `ffmpeg`, `Xvfb` and `chromium`,
+Pure Python standard library, **3.8 or newer** — the full test suites are run
+against 3.8, 3.9 and 3.14. No `pip install`, no build step, no dependencies. The streamer additionally needs `ffmpeg`, `Xvfb` and `chromium`,
 which do the rendering and encoding.
 
 <a href="images/mainscreen.png">
@@ -253,6 +253,20 @@ misconfiguration for ever.
 Both JavaScript smoke tests run the real page against a stubbed DOM and fire
 every button, because `node --check` proves only that a file parses, not that a
 handler exists.
+
+To check a Python version rather than assume it:
+
+```bash
+python3 tools/check_python.py          # whichever interpreter you have
+```
+
+It compiles every file, imports every module — the tools included, which the
+suites never touch — runs both suites and checks each CLI answers `--help`.
+The header of that file shows how to run it across versions in containers
+without installing any of them. Both incompatibilities it found were invisible
+by reading: `socket.timeout` only became an alias of `TimeoutError` in 3.10, so
+a slow device read as *offline* on 3.8 and 3.9; and `Path.is_relative_to`
+arrived in 3.9.
 
 ## Licence
 
