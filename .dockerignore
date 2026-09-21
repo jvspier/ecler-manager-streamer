@@ -1,0 +1,12 @@
+.git
+.gitignore
+images/
+docs/
+streamer/
+tests/
+config.json
+devices.txt
+events.jsonl
+*.bak
+**/__pycache__
+SITE-NOTES.md

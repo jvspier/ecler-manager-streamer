@@ -1,0 +1,42 @@
+# Ecler VEO Manager.
+#
+#   docker compose up -d
+#
+# Then http://<this host>:8477/ — and read the two notes below before you
+# decide this works for you.
+services:
+  eclermanager:
+    build: .
+    image: eclermanager
+    container_name: eclermanager
+
+    # host networking, deliberately.
+    #
+    # The manager has to reach your receivers on TCP 9999, and its network
+    # scan has to see the VLAN they live on. On a bridge network it would be
+    # NAT'd behind the host, which works for polling known addresses but makes
+    # discovery useless. If you would rather not use host networking, a
+    # macvlan interface on the receivers' VLAN is the other sensible option;
+    # a plain bridge is not.
+    network_mode: host
+
+    volumes:
+      # config.json, and the credentials file if you use one.
+      - ./config:/etc/eclermanager
+      # the event log — every drift, signal loss, switch and re-acquire.
+      - ./state:/var/lib/eclermanager
+
+    environment:
+      # Set a login. Without these the manager runs open to anyone who can
+      # reach the port, and says so loudly in its log.
+      #
+      # Generate the hash with:
+      #   python3 tools/setpassword.py --user admin --print
+      # or set ECLER_AUTH_PASSWORD instead and let it hash on start.
+      ECLER_AUTH_USER: "${ECLER_AUTH_USER:-}"
+      ECLER_AUTH_PASSWORD_HASH: "${ECLER_AUTH_PASSWORD_HASH:-}"
+      # Keeps logins valid across restarts. Generate once:
+      #   python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+      ECLER_SESSION_SECRET: "${ECLER_SESSION_SECRET:-}"
+
+    restart: unless-stopped

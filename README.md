@@ -166,6 +166,20 @@ python3 run.py            # → http://127.0.0.1:8477/
 `--host 0.0.0.0` to let colleagues reach it — but read the warning it prints,
 and see [Login](docs/deployment.md#login).
 
+### Or run it in Docker
+
+```bash
+docker compose up -d        # then http://<this host>:8477/
+```
+
+Both ways are supported and neither is the "real" one — see
+[docs/docker.md](docs/docker.md) for volumes, credentials, and why the compose
+file uses host networking (short version: discovery has to see the receivers'
+VLAN, and a NAT'd bridge cannot).
+
+The streamer is deliberately **not** containerised; its lifecycle model is
+systemd and it needs a real interface to send multicast from.
+
 ### Try it without hardware
 
 ```bash
@@ -185,6 +199,7 @@ The emulator reproduces the real wire format, including the awkward parts, and
 | [docs/usage.md](docs/usage.md) | Every control, plus naming, commissioning, self-healing, backups |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | What went wrong on a real fleet and how each was diagnosed — including what did *not* work |
 | [docs/api.md](docs/api.md) | HTTP API |
+| [docs/docker.md](docs/docker.md) | Running the manager as a container, and why the streamer is not one |
 | [streamer/README.md](streamer/README.md) | The streamer: rendering dashboards headlessly and streaming them to receivers, so no PC is attached to a transmitter |
 | [streamer/docs/streaming.md](streamer/docs/streaming.md) | How the streaming was proven, and the five failure modes a test pattern hides |
 

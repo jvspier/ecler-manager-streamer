@@ -46,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="how long a login lasts (default 12)")
     parser.add_argument("--new-session-secret", action="store_true",
                         help="roll the session secret, logging everyone out")
+    parser.add_argument("--print", dest="print_only", action="store_true",
+                        help="print the variables instead of writing a file, "
+                             "for pasting into a container environment")
     args = parser.parse_args(argv)
 
     if not auth.valid_user(args.user):
@@ -80,6 +83,20 @@ def main(argv: list[str] | None = None) -> int:
     if hours is None:
         hours = float(existing.get("ECLER_SESSION_HOURS",
                                    auth.DEFAULT_SESSION_HOURS))
+
+    if args.print_only:
+        # Nothing is written. For Docker and anything else that takes its
+        # configuration as environment variables rather than a file.
+        print()
+        print(f"ECLER_AUTH_USER={args.user}")
+        print(f"ECLER_AUTH_PASSWORD_HASH={auth.hash_password(password)}")
+        print(f"ECLER_SESSION_SECRET={secret}")
+        print(f"ECLER_SESSION_HOURS={hours:g}")
+        print()
+        print("The password itself is not shown or stored -- only the hash.")
+        print("Keep the session secret: without it, every restart logs "
+              "everyone out.")
+        return 0
 
     lines = [
         "# Ecler VEO Manager credentials. Written by tools/setpassword.py.",

@@ -26,6 +26,14 @@ eclerstreamer.service ── web UI on :8478 ── systemctl start/stop/restart
 crash, hang, or be stopped for an upgrade and not one frame stops. That is the
 whole reason for the split.
 
+**Not containerised, on purpose.** The manager has a Dockerfile; this does
+not. Its lifecycle model *is* systemd — the per-channel units own the streams
+and the web UI is only a remote control, which is what lets the UI crash or be
+upgraded without stopping a frame. And multicast has to leave by a specific
+interface with a specific source address, so a container would need host
+networking anyway, giving up most of what a container is for. If you want one,
+open an issue and say what you need it for.
+
 ## Install
 
 On a Debian host with a leg on the TV VLAN:
