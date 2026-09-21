@@ -12,6 +12,13 @@ which happens after a power event — is fixed by climbing to the unit and
 pressing its channel button. They are, however, on the network and speak a
 control protocol, so none of that is necessary.
 
+**How proven is this?** The manager has run continuously against 30 receivers
+since early September 2026 and has done every switch, rename and
+commissioning job on that fleet. The streamer is newer: built mid-September,
+it currently drives three channels on one machine, has survived reboots
+unattended, and has not yet replaced the hardware transmitters in daily
+service. Both carry tests that run without any hardware.
+
 Pure Python standard library, **3.8 or newer** — the full test suites are run
 against 3.8, 3.9 and 3.14. No `pip install`, no build step, no dependencies. The streamer additionally needs `ffmpeg`, `Xvfb` and `chromium`,
 which do the rendering and encoding.
@@ -267,6 +274,13 @@ without installing any of them. Both incompatibilities it found were invisible
 by reading: `socket.timeout` only became an alias of `TimeoutError` in 3.10, so
 a slow device read as *offline* on 3.8 and 3.9; and `Path.is_relative_to`
 arrived in 3.9.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: I can only test
+against VEO-XRI1C / VEO-XTI1C on firmware `V1.01.r0`, so if your unit parses
+differently, `python3 tools/probe.py <ip>` and the raw output in an issue is
+worth more than a description.
 
 ## Licence
 

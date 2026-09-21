@@ -3,6 +3,12 @@
 Renders web dashboards headlessly and streams them as H.264 over multicast, so
 a VEO receiver shows them without a PC attached to a transmitter.
 
+**Maturity.** Newer than the manager and less exercised: it drives three
+channels on one machine, survives reboots unattended, and its 47 tests run
+without hardware — but it has not yet replaced the hardware transmitters in
+daily service. The encoder settings below are the ones proven on real
+receivers; the rest is ordinary software.
+
 It is a **separate service** from the Ecler Manager, deliberately. The manager
 is operational — you open it when a TV drops off. The streamer is
 set-and-forget. Keeping them apart means a stray click in the tool you use
