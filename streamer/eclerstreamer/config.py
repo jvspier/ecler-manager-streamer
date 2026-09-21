@@ -84,6 +84,11 @@ class Config:
     # these addresses change once every few years, which is exactly long
     # enough to forget them.
     notes: str = ""
+    # Days between automatic restarts of each channel; 0 disables it. Memory
+    # creeps -- browser, Xvfb and encoder all -- and nothing else restarts
+    # these once the host's backup runs in snapshot mode. Per-site, because
+    # how long is safe depends on the pages being rendered.
+    restart_interval_days: int = 0
     dashboards: list[Dashboard] = field(default_factory=list)
 
     def dashboard(self, channel: int) -> Dashboard | None:
@@ -94,6 +99,7 @@ class Config:
             "local_addr": self.local_addr, "interface": self.interface,
             "manager_url": self.manager_url, "qmin": self.qmin,
             "no_bframes": self.no_bframes, "notes": self.notes,
+            "restart_interval_days": self.restart_interval_days,
             "dashboards": [d.to_dict() for d in self.dashboards],
         }
 
@@ -129,6 +135,7 @@ def parse(data: dict, path: Path = DEFAULT_PATH) -> Config:
     cfg.qmin = max(0, int(data.get("qmin", cfg.qmin)))
     cfg.no_bframes = bool(data.get("no_bframes", cfg.no_bframes))
     cfg.notes = str(data.get("notes", "") or "")
+    cfg.restart_interval_days = max(0, int(data.get("restart_interval_days", 0)))
 
     seen: set[int] = set()
     for entry in data.get("dashboards", []) or []:

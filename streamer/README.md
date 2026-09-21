@@ -77,6 +77,26 @@ python3 tools/setpassword.py --env /etc/eclerstreamer/eclerstreamer.env --user a
 The card then shows a live screenshot of what that channel is actually
 displaying, which is the one thing a status line cannot tell you.
 
+## Sessions and scheduled restarts
+
+**The browser profile is kept between runs.** A dashboard behind a login stays
+logged in across a restart. It used to be wiped every start, on the reasoning
+that a kiosk browser has nothing worth keeping — which was wrong in the one
+way that mattered, and left Google-authenticated dashboards showing a device
+authorisation page instead of the dashboard.
+
+`--fresh-profile` wipes it deliberately, when a profile really is the problem.
+
+**Memory creeps** — in the browser, the virtual display and the encoder alike,
+measured at roughly 750 MB a week across three channels. If nothing else
+restarts the host, set **Restart channels every** in Host settings. A timer
+checks nightly and restarts **at most one channel**, longest-running first, so
+the channels stagger themselves across different nights and only one screen is
+ever briefly dark.
+
+Pick the interval to suit the pages: a month is comfortable on 8 GB with three
+channels. Watch `free -m` for a few weeks and decide rather than guessing.
+
 ## Sizing
 
 Measured, one 1080p30 stream of a heavy page (slideshow, photos, animation):

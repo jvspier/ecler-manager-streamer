@@ -34,6 +34,7 @@ URL=""
 DISPLAY_NUM=":99"
 SIZE="1920x1080"
 BROWSER=""
+FRESH_PROFILE=false
 ACTION="start"
 USE_KIOSK=false
 SHOT=""
@@ -44,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --display) DISPLAY_NUM=${2:?--display needs e.g. :99}; shift 2 ;;
         --size)    SIZE=${2:?--size needs e.g. 1920x1080}; shift 2 ;;
         --browser) BROWSER=${2:?--browser needs a path}; shift 2 ;;
+        --fresh-profile) FRESH_PROFILE=true; shift ;;
         --stop)    ACTION="stop"; shift ;;
         --status)  ACTION="status"; shift ;;
         --kiosk)   USE_KIOSK=true; shift ;;
@@ -153,7 +155,9 @@ stop)
             echo "  stopped $what ($pid)"
         fi
     done < "$PIDFILE"
-    sleep 1
+    # Long enough for Chromium to flush its profile -- cookies and session
+    # included -- so the next start comes up logged in rather than clean.
+    sleep 4
     # Anything that ignored SIGTERM.
     while read -r pid what; do
         if kill -0 "$pid" 2>/dev/null; then
@@ -214,13 +218,27 @@ if [[ "$AVAILABLE" -gt 0 && "$AVAILABLE" -lt 1500 ]]; then
     echo "! only ${AVAILABLE} MB available; a browser may be tight" >&2
 fi
 
-# A crashed Chromium leaves a SingletonLock and a "was not shut down
-# correctly" flag in its profile, and the next start can refuse or sit on a
-# restore prompt instead of the page.  The profile holds nothing worth keeping
-# for a kiosk browser, so start clean every time.
+# The profile is KEPT between runs. It was wiped every start, on the reasoning
+# that a kiosk browser has nothing worth keeping -- which turned out to be
+# wrong in the way that matters: it holds the login session. Dashboards behind
+# a Google sign-in were logged out by every restart, landing on a device
+# authorisation page instead of the page anyone wanted to see. A scheduled
+# restart to bound memory would have done that on a timer.
+#
+# The two things wiping avoided are handled directly instead: a stale
+# SingletonLock is removed below, and the crash-restore bubble is suppressed
+# by flag. --fresh-profile wipes deliberately, for when a profile really is
+# the problem.
 PROFILE="$RUNTIME_DIR/pagesource-${DISPLAY_NUM#:}-profile"
-rm -rf "$PROFILE"
+if [[ "$FRESH_PROFILE" == true ]]; then
+    rm -rf "$PROFILE"
+fi
 mkdir -p "$PROFILE"
+# Left behind by a browser that was killed rather than asked to stop. Nothing
+# is running on this display -- that was checked above -- so these are stale
+# by definition, and Chromium refuses to start while they exist.
+rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" \
+      "$PROFILE/SingletonCookie"
 
 step "Starting Xvfb on $DISPLAY_NUM at $SIZE"
 # setsid plus closed inherited descriptors: without both, this script's caller
@@ -321,6 +339,12 @@ BROWSER_ARGS=(
     --disable-renderer-backgrounding
     --window-size="$WIDTH,$HEIGHT"
     --user-data-dir="$PROFILE"
+    # Now that the profile persists, a browser that did not exit cleanly would
+    # otherwise greet the wall with a "restore pages?" bubble over the page.
+    --no-first-run
+    --no-default-browser-check
+    --disable-session-crashed-bubble
+    --hide-crash-restore-bubble
 )
 [[ -n "$KIOSK_FLAGS" ]] && BROWSER_ARGS+=("$KIOSK_FLAGS")
 BROWSER_ARGS+=("$APP_FLAG")

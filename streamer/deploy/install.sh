@@ -64,9 +64,11 @@ step "Application to $APP_DIR"
 # access parent directories", and the stream dies on its next teardown.
 install -d -m 0755 "$APP_DIR"
 rm -rf "$APP_DIR/eclerstreamer" "$APP_DIR/tools" \
-       "$APP_DIR/stream.py" "$APP_DIR/run.py"
-cp -r "$SRC/eclerstreamer" "$SRC/tools" "$SRC/stream.py" "$SRC/run.py" "$APP_DIR/"
-chmod +x "$APP_DIR/stream.py" "$APP_DIR/run.py" "$APP_DIR/tools/pagesource.sh"
+       "$APP_DIR/stream.py" "$APP_DIR/run.py" "$APP_DIR/maintenance.py"
+cp -r "$SRC/eclerstreamer" "$SRC/tools" "$SRC/stream.py" "$SRC/run.py" \
+      "$SRC/maintenance.py" "$APP_DIR/"
+chmod +x "$APP_DIR/stream.py" "$APP_DIR/run.py" "$APP_DIR/maintenance.py" \
+         "$APP_DIR/tools/pagesource.sh"
 find "$APP_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
 step "Config"
@@ -93,6 +95,8 @@ chmod 0640 "$CONF_DIR/config.json"
 step "systemd units"
 install -m 0644 "$SRC/deploy/dashboard-stream@.service" /etc/systemd/system/
 install -m 0644 "$SRC/deploy/eclerstreamer.service" /etc/systemd/system/
+install -m 0644 "$SRC/deploy/dashboard-maintenance.service" /etc/systemd/system/
+install -m 0644 "$SRC/deploy/dashboard-maintenance.timer" /etc/systemd/system/
 
 step "sudo rule for the five stream verbs"
 # Validate before installing: a broken sudoers file locks everyone out of sudo,
@@ -110,6 +114,9 @@ rm -f "$tmp_rule"
 
 systemctl daemon-reload
 systemctl enable eclerstreamer.service
+# Harmless when the interval is 0: the script looks, finds nothing to do and
+# exits. Enabled always so turning restarts on is a setting, not an install.
+systemctl enable --now dashboard-maintenance.timer
 
 # Do not start it without a login. The unit binds 0.0.0.0:8478, and this
 # service can stop every screen in a building and set the URLs a browser then

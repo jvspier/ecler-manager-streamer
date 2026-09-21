@@ -307,6 +307,7 @@ class Handler(BaseHTTPRequestHandler):
                 "local_addr": cfg.local_addr, "interface": cfg.interface,
                 "manager_url": cfg.manager_url, "qmin": cfg.qmin,
                 "no_bframes": cfg.no_bframes, "notes": cfg.notes,
+                "restart_interval_days": cfg.restart_interval_days,
             },
             "dashboards": [
                 dict(d.to_dict(),
@@ -387,6 +388,16 @@ class Handler(BaseHTTPRequestHandler):
                     setattr(cfg, key, str(body[key] or "").strip())
             if "qmin" in body and body["qmin"] is not None:
                 cfg.qmin = max(0, int(body["qmin"]))
+            if "restart_interval_days" in body:
+                try:
+                    days = int(body["restart_interval_days"] or 0)
+                except (TypeError, ValueError):
+                    raise ApiError(HTTPStatus.BAD_REQUEST,
+                                   "restart interval must be a number") from None
+                if not 0 <= days <= 365:
+                    raise ApiError(HTTPStatus.BAD_REQUEST,
+                                   "restart interval must be 0-365 days")
+                cfg.restart_interval_days = days
             if "no_bframes" in body:
                 cfg.no_bframes = bool(body["no_bframes"])
             cfg.save()

@@ -331,6 +331,13 @@ class TestHttp(unittest.TestCase):
         self.assertEqual(config_mod.load(self.path).dashboard(5).note,
                          "fed by the old ChromeBox")
 
+    def test_restart_interval_persists_and_is_bounded(self):
+        self._post("/api/config", {"restart_interval_days": 30})
+        self.assertEqual(config_mod.load(self.path).restart_interval_days, 30)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self._post("/api/config", {"restart_interval_days": 4000})
+        self.assertEqual(caught.exception.code, 400)
+
     def test_unknown_channel_is_a_404(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self._post("/api/dashboards/9", {"url": "https://z/"})

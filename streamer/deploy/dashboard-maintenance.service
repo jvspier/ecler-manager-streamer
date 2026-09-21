@@ -1,0 +1,12 @@
+# Restarts one channel a day, if any has been running longer than the
+# configured interval. Started by dashboard-maintenance.timer; you would not
+# normally run it by hand.
+[Unit]
+Description=Restart dashboard streams that are due
+
+[Service]
+Type=oneshot
+# Runs as root so it can call systemctl directly, rather than needing the
+# web service's narrow sudo rule.
+ExecStart=/usr/bin/python3 /opt/eclerstreamer/maintenance.py
+Environment=PYTHONDONTWRITEBYTECODE=1

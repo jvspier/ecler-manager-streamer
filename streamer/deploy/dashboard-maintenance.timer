@@ -1,0 +1,14 @@
+# Daily. The script restarts at most one channel per run, so the interval in
+# the config decides how often any given channel is touched, and the channels
+# naturally stagger across different days.
+[Unit]
+Description=Daily check for dashboard streams due a restart
+
+[Timer]
+OnCalendar=*-*-* 04:17:00
+# Not on the hour: a wall of screens and a backup window should not contend.
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
