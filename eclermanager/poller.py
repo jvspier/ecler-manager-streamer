@@ -566,12 +566,14 @@ class Poller:
         self._log_config_event("channel", f"channel {group_id} removed")
 
     # --- batch -----------------------------------------------------------
-    #: Receivers switched at once. The one-session limit is per device, so
-    #: different receivers are independent and a per-host lock already stops
-    #: a batch colliding with a poll of the same unit -- this is about being
-    #: gentle with a network that has been knocked over before, and keeping
-    #: progress readable, not about correctness.
-    BATCH_CONCURRENCY = 4
+    #: Receivers switched at once. One: at four, receivers switched onto the
+    #: same stream in the same instant showed a picture but reported
+    #: "Unlock" indefinitely -- a re-acquire via an empty channel did not
+    #: clear it, switching to another live stream and back did -- while each
+    #: one switched on its own locked (field, 2026-09-23). Why is not known;
+    #: simultaneity was the only difference, since the commands sent are
+    #: identical. A batch of thirty takes about a minute and a half.
+    BATCH_CONCURRENCY = 1
 
     def start_batch_move(self, receiver_ids: list[str], group_id: int, *,
                          set_expected: bool = True) -> int:

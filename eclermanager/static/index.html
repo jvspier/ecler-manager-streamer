@@ -1027,7 +1027,7 @@ function moveBar(key, groupId, devices) {
       <input type="checkbox" id="mvx-${key}"${setExpected ? " checked" : ""}>
       also make it their expected channel</label>
     <button data-act="batch-move" data-group="${key}"${busy ? " disabled" : ""}
-      title="${busy ? "A move is already running" : "Switch them in the background, four at a time"}">Move</button>`;
+      title="${busy ? "A move is already running" : "Switch them in the background, one at a time"}">Move</button>`;
   return bar;
 }
 

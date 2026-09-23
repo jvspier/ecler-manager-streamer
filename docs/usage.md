@@ -160,7 +160,7 @@ TV is on, gets no heading of its own; it is listed in one **On no TV** line
 under the groups instead.
 
 An expanded group has a **Move these N to** bar. It switches every receiver in
-that group to the chosen channel in the background, four at a time. With
+that group to the chosen channel in the background, one at a time. With
 **also make it their expected channel** ticked (the default), the new channel
 is written as every receiver's expectation *before* any of them is switched.
 That way Repair and auto-repair never see a half-moved group as drift and
@@ -168,10 +168,12 @@ send it back. A unit that is offline or does not answer is reported and
 skipped, and the rest carry on. Progress shows in a banner, and the result,
 with any failures, arrives as a notification.
 
-Four at a time, not all at once, so the regular polling keeps going
-alongside. And not one by one either: at a second or two per verified
-switch, thirty receivers would keep you waiting for no benefit. Each receiver
-still gets exactly one session at a time, as with every other action.
+One at a time on purpose, about three seconds each. It first ran four at a
+time, and receivers switched onto the same stream together showed a picture
+but reported **no signal** indefinitely, while each one switched on its own
+locked normally. A **re-acquire** did not clear that state; switching the
+receiver to another live channel and back did. If a batch ever leaves "no
+signal" chips on screens that look fine, that is the fix.
 
 **Recent events** at the bottom is collapsed by default and answers "how often
 does this actually happen?" — every drift, signal loss, offline period, switch

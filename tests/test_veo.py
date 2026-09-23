@@ -2189,6 +2189,30 @@ class TestChannelsAndBatch(unittest.TestCase):
         self.assertEqual([r["id"] for r in failed], ["rx-03"])
         self.assertIn("1 failed", poller.batch_message)
 
+    def test_receivers_are_switched_one_at_a_time(self):
+        """Switched together onto one stream, real receivers showed a picture
+        but reported Unlock until moved to another live channel and back."""
+        import threading as _threading
+        poller = self._poller()
+        active, peak, guard = [0], [0], _threading.Lock()
+
+        class Result:
+            ok, message = True, "ok"
+
+        def switch(rid, group_id, *, source="manual"):
+            with guard:
+                active[0] += 1
+                peak[0] = max(peak[0], active[0])
+            time.sleep(0.02)
+            with guard:
+                active[0] -= 1
+            return Result()
+
+        poller.set_channel = switch
+        poller.start_batch_move([f"rx-{n:02d}" for n in range(1, 7)], 6)
+        self._wait(poller)
+        self.assertEqual(peak[0], 1)
+
     def test_a_second_batch_is_refused_while_one_runs(self):
         import threading as _threading
         poller = self._poller()
