@@ -312,6 +312,14 @@
   .move-bar select { width: auto; }
   .move-bar button { font-size: 12px; padding: 7px 12px; }
 
+  /* Channels nobody watches, folded into one line instead of a heading each. */
+  .idle-line {
+    margin: -14px 0 34px; font-size: 12px; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline;
+  }
+  .idle-line b { font-weight: 600; color: var(--muted); }
+  .idle-line .mono { font-family: var(--mono); font-size: 11.5px; }
+
   .batch-banner {
     display: flex; align-items: center; gap: 12px; margin: 4px 0 22px;
     padding: 11px 14px; border-radius: var(--r-md); background: var(--surface);
@@ -974,8 +982,11 @@ function groupSection({ key, groupId, name, note, transmitter, multicast,
     const empty = document.createElement("div");
     empty.className = "note";
     empty.style.padding = "2px 0 4px";
-    empty.textContent = transmitter
-      ? `${transmitter} is streaming this channel, but no TV is set to show it.`
+    // Only reached when a TV is on it anyway: channels nobody is on are
+    // folded into the "On no TV" line instead.
+    empty.textContent = onItNow
+      ? `No TV is meant to be on this channel, but ${onItNow} ${onItNow === 1 ? "is" : "are"}`
+        + " — see the wrong channel chips in their own groups."
       : "No TV is set to show this channel.";
     section.append(empty);
   } else if (expanded) {
@@ -1367,10 +1378,19 @@ function renderPage() {
   const sections = [];
   const claimed = new Set();
 
+  const idle = [];
   for (const channel of channels) {
     const devices = state.data.devices.filter(
       (d) => d.expected_group_id === channel.group_id);
     devices.forEach((d) => claimed.add(d.id));
+    // No TV meant to be on it, and none on it anyway: a full heading per
+    // retired or spare channel is only noise. One that a drifted TV has
+    // landed on keeps its heading, so "N on it now" stays visible.
+    const onItNow = state.data.devices.some((d) => d.group_id === channel.group_id);
+    if (!devices.length && !onItNow) {
+      idle.push(channel);
+      continue;
+    }
     sections.push(groupSection({
       key: `ch${channel.group_id}`,
       groupId: channel.group_id,
@@ -1392,6 +1412,17 @@ function renderPage() {
       transmitter: null,
       devices: rest,
     }));
+  }
+
+  if (idle.length) {
+    const line = document.createElement("div");
+    line.className = "idle-line";
+    line.innerHTML = `<b>On no TV</b>` + idle.map((channel) =>
+      `<span title="${esc(channel.note || "")}">${channel.group_id} · ${esc(channel.name)}`
+      + (channel.transmitter_ip
+          ? ` <span class="mono">${esc(channel.transmitter_ip)}</span>` : "")
+      + `</span>`).join("");
+    sections.push(line);
   }
 
   const container = document.getElementById("groups");

@@ -155,7 +155,9 @@ it can live on any of them. **button** decides whether the channel gets a
 one-click button on every card. Untick it for a channel you are retiring, and
 it stays available under **Should be** and **Any channel** (and remains on the
 cards of TVs still meant to be on it). A channel that TVs are still expected
-on cannot be removed; move them first.
+on cannot be removed; move them first. A channel no TV is meant to be on, and no
+TV is on, gets no heading of its own; it is listed in one **On no TV** line
+under the groups instead.
 
 An expanded group has a **Move these N to** bar. It switches every receiver in
 that group to the chosen channel in the background, four at a time. With
