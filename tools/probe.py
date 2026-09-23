@@ -5,13 +5,12 @@
 
 Read-only.  Use --set-channel to test a write on a device you can see.
 
-**Not while the manager is polling the same device.** A VEO handles one
-control session at a time. The manager serialises its own sessions per
-device, but this is a separate process it knows nothing about, so the two
-collide: a unit was seen to hang up mid-probe and then answer so slowly (14s
-a poll, commands unanswered) that it needed a power cycle. Set the receiver
-aside in the manager first ("set aside" stops its polling), probe it, then
-return it to service.
+**Preferably not while the manager is polling the same device.** A VEO
+handles one control session at a time. The manager serialises its own
+sessions per device, but this is a separate process it knows nothing about,
+so the two can collide -- a probe run alongside the manager saw the unit
+hang up on its first attempt. Set the receiver aside in the manager first
+("set aside" stops its polling), probe it, then return it to service.
 
 When a device answers on port 9999 but tells you nothing, run this against a
 unit that *works* and one that does not, and compare.  It reports:
