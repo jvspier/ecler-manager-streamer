@@ -36,7 +36,7 @@ const STATE = {
     multicast_group: "239.255.42.43", show_button: true,
   }, {
     group_id: 6, name: "Production (stream)", transmitter_ip: null, note: "",
-    multicast_group: null, show_button: false,
+    multicast_group: null, show_button: false, reports_lock: false,
   }],
   disabled: [{ id: "rx-90", name: "spare", ip: "10.0.2.90", location: "",
                note: "in storage", expected_group_id: null, enabled: false }],
@@ -159,6 +159,10 @@ function fail(message) { throw new Error(message); }
     api.deviceCard({ ...STATE.devices[0], drifted: true, group_id: 2 });
     api.deviceCard({ ...STATE.devices[0], held: true, held_from_group_id: 1 });
     api.deviceCard({ ...STATE.devices[0], video_lock: false, dhcp: true });
+    if (!api.deviceCard({ ...STATE.devices[0], video_lock: null, lock_reported: false })
+          .innerHTML.includes("signal n/a")) {
+      fail("a receiver on a software stream should say signal n/a");
+    }
     api.advancedPanel(STATE.devices[0]);
     api.renameEditor(STATE.devices[0]);
     api.disabledCard(STATE.disabled[0]);

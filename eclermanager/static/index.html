@@ -282,7 +282,7 @@
     /* Fixed trailing columns: each row is its own grid, and "Add" versus
        "Save", or a Remove button versus none, would otherwise shift them. */
     grid-template-columns: 64px minmax(140px, 2fr) minmax(110px, 1fr)
-                           minmax(110px, 1fr) minmax(120px, 2fr) 76px 64px 76px;
+                           minmax(110px, 1fr) minmax(120px, 2fr) 76px 64px 64px 76px;
   }
   .chan-row.head { font-size: 11px; color: var(--muted); }
   .chan-row .num { font-family: var(--mono); font-size: 13px; color: var(--text); }
@@ -731,7 +731,9 @@ function deviceCard(device) {
   if (!device.online) {
     chips.push(`<span class="chip bad">offline</span>`);
   } else {
-    if (device.video_lock === true) chips.push(`<span class="chip ok">signal</span>`);
+    if (device.lock_reported === false) {
+      chips.push(`<span class="chip" title="This channel is a software stream. The VEO's lock flag only reflects the channel it was on before, so it is not shown.">signal n/a</span>`);
+    } else if (device.video_lock === true) chips.push(`<span class="chip ok">signal</span>`);
     else if (device.video_lock === false) chips.push(`<span class="chip warn">no signal</span>`);
     else chips.push(`<span class="chip">signal unknown</span>`);
     if (device.dhcp === true) {
@@ -1161,6 +1163,7 @@ function channelRow(channel) {
       <option value="">ID</option>${free.join("")}</select>`;
   }
   const button = draftOr(`chn-${key}-btn`, channel ? channel.show_button !== false : true);
+  const lock = draftOr(`chn-${key}-lock`, channel ? channel.reports_lock !== false : true);
   const assigned = channel ? state.data.devices
     .filter((d) => d.expected_group_id === channel.group_id).length : 0;
   return `<div class="chan-row">
@@ -1176,6 +1179,7 @@ function channelRow(channel) {
       <input id="chn-${key}-note" value="${value("note", channel?.note)}" maxlength="64"
              placeholder="Note (optional)" aria-label="Note">
       <label><input type="checkbox" id="chn-${key}-btn"${button ? " checked" : ""}> button</label>
+      <label title="Untick for a software stream. A VEO only gets a real lock reading from a hardware transmitter; on the streamer's channels it keeps whatever the previous channel left it with, so no signal there is not a fault."><input type="checkbox" id="chn-${key}-lock"${lock ? " checked" : ""}> lock</label>
       <button data-act="channel-save" data-group="${key}">${channel ? "Save" : "Add"}</button>
       ${channel
         ? `<button class="quiet" data-act="channel-delete" data-group="${key}"
@@ -1193,7 +1197,7 @@ function renderChannels() {
     <div class="chan-table">
       <div class="chan-row head"><span>Group ID</span><span>Name</span>
         <span>Source IP</span><span>Multicast</span><span>Note</span>
-        <span></span><span></span><span></span></div>
+        <span></span><span></span><span></span><span></span></div>
       ${(state.data.channels || []).map(channelRow).join("")}
       ${channelRow(null)}
     </div>`;
@@ -1590,6 +1594,7 @@ document.addEventListener("click", async (event) => {
           multicast_group: read("mc").value.trim() || null,
           note: read("note").value.trim(),
           show_button: read("btn").checked,
+          reports_lock: read("lock").checked,
         }),
       });
       toast(`Saved channel ${groupId} · ${name}`, "ok");

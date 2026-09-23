@@ -433,6 +433,7 @@ class Handler(BaseHTTPRequestHandler):
             multicast_group=self._optional_ip(data.get("multicast_group"),
                                               "multicast_group", multicast=True),
             show_button=bool(data.get("show_button", True)),
+            reports_lock=bool(data.get("reports_lock", True)),
         )
         self._send_json({"ok": True, "group_id": group_id})
 

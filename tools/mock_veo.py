@@ -33,6 +33,16 @@ class FakeDevice:
         self.video_lock = True
         self.stuck = False
         self.lock = threading.Lock()
+        #: Field behaviour, event log 2026-09-23: on a software stream the
+        #: lock flag keeps the previous channel's value; and a channel whose
+        #: transmitter has lost its input reports Unlock.
+        self.latched_groups: set[int] = set()
+        self.unlocked_groups: set[int] = set()
+
+    def lock_after_switch_to(self, group_id: int) -> bool:
+        if group_id in self.latched_groups:
+            return self.video_lock
+        return group_id not in self.unlocked_groups and group_id != 63
 
     def chaos(self) -> None:
         """Occasionally wander off channel or drop the stream."""
@@ -113,8 +123,8 @@ class Handler(socketserver.StreamRequestHandler):
                     # nothing -- so a stuck receiver stays stuck.  This is why the
                     # manager bounces through another channel instead.
                     return "OK"
+                device.video_lock = device.lock_after_switch_to(requested)
                 device.group_id = requested
-                device.video_lock = True
                 device.stuck = False
             return "OK"
         if command == "_break":
@@ -186,6 +196,14 @@ def main() -> int:
                              "VEO-XRI1C on firmware Rx V1.01.r0 (default)")
     parser.add_argument("--reply-delay", type=float, default=0.0, metavar="SECONDS",
                         help="pause before answering, to emulate slow firmware")
+    parser.add_argument("--latched-lock", type=int, action="append", default=[],
+                        metavar="GROUP",
+                        help="on GROUP the lock flag keeps the previous channel's "
+                             "value, as on a software stream (repeatable)")
+    parser.add_argument("--unlocked-group", type=int, action="append", default=[],
+                        metavar="GROUP",
+                        help="GROUP reports Unlock, like a transmitter that lost "
+                             "its input (repeatable)")
     parser.add_argument("--chaos", type=float, default=0.0, metavar="SECONDS",
                         help="every N seconds, randomly break a device")
     args = parser.parse_args()
@@ -197,6 +215,9 @@ def main() -> int:
         device = FakeDevice(name=f"MOCK-RX-{index + 1}",
                             group_id=(index % 4) + 1,
                             mac=f"00:19:F5:00:00:{index + 1:02X}")
+        device.latched_groups = set(args.latched_lock)
+        device.unlocked_groups = set(args.unlocked_group)
+        device.video_lock = device.lock_after_switch_to(device.group_id)
         style = args.style if args.style != "mixed" else styles[index % len(styles)]
         serve(host, args.port, device, style, args.reply_delay)
         devices.append(device)

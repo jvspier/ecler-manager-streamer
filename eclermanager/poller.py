@@ -68,7 +68,12 @@ class ReceiverState:
             "expected_channel_name": config.channel_name(
                 self.receiver.expected_group_id
             ),
-            "video_lock": status.video_lock if status else None,
+            # Masked where the channel's flag is meaningless, so every count
+            # and chip downstream sees "unknown" rather than a false alarm.
+            "video_lock": (status.video_lock
+                           if status and config.reports_lock(status.group_id)
+                           else None),
+            "lock_reported": config.reports_lock(status.group_id if status else None),
             "device_name": status.device_name if status else None,
             "fw_version": status.fw_version if status else None,
             "mac_address": status.mac_address if status else None,
@@ -261,7 +266,9 @@ class Poller:
                 else:
                     state.consecutive_drift = 0
 
-            if status.online and status.video_lock is False:
+            if not self.config.reports_lock(status.group_id):
+                state.consecutive_no_signal = 0     # nothing to judge it by
+            elif status.online and status.video_lock is False:
                 state.consecutive_no_signal += 1
                 if state.consecutive_no_signal == 1:
                     self._log_event(rx, "signal_lost", "no video lock")
@@ -366,6 +373,9 @@ class Poller:
         finally:
             with self._lock:
                 state.busy = False
+        if result.ok and not self.config.reports_lock(target):
+            result.message = (f"re-acquired channel {target} (this channel "
+                              "does not report lock)")
         with self._lock:
             state.last_action = f"{source} re-acquire: {result.message}"
             state.last_action_at = time.time()
@@ -510,7 +520,8 @@ class Poller:
     def upsert_channel(self, group_id: int, name: str, *,
                        transmitter_ip: str | None = None, note: str = "",
                        multicast_group: str | None = None,
-                       show_button: bool = True) -> None:
+                       show_button: bool = True,
+                       reports_lock: bool = True) -> None:
         """Add a channel, or change one, and persist it.
 
         Channels used to exist only in config.json. That was fine while the
@@ -528,7 +539,7 @@ class Poller:
                     group_id=group_id, name=name,
                     transmitter_ip=transmitter_ip, note=note,
                     multicast_group=multicast_group,
-                    show_button=show_button))
+                    show_button=show_button, reports_lock=reports_lock))
                 self.config.channels.sort(key=lambda c: c.group_id)
                 verb = "added"
             else:
@@ -537,6 +548,7 @@ class Poller:
                 existing.note = note
                 existing.multicast_group = multicast_group
                 existing.show_button = show_button
+                existing.reports_lock = reports_lock
                 verb = "updated"
         self.config.save()
         self._log_config_event("channel", f"channel {group_id} {verb}: {name}")

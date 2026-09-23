@@ -40,6 +40,12 @@ class Channel:
     #: migration from hardware transmitters to software streams leaves both
     #: sets configured for a while, and seven buttons a card is too many.
     show_button: bool = True
+    #: Whether a receiver's video-lock flag means anything on this channel.
+    #: Off for software streams: on those a VEO keeps whatever lock state it
+    #: had on the previous channel, in either direction, however long it
+    #: stays (event log, 2026-09-23). The flag is set by the hardware
+    #: transmitters; this stream does not carry what sets it.
+    reports_lock: bool = True
 
     def as_dict(self) -> dict:
         return {
@@ -49,6 +55,7 @@ class Channel:
             "note": self.note,
             "multicast_group": self.multicast_group,
             "show_button": self.show_button,
+            "reports_lock": self.reports_lock,
         }
 
 
@@ -127,6 +134,13 @@ class Config:
             if ch.group_id == group_id:
                 return ch.name
         return None
+
+    def reports_lock(self, group_id: int | None) -> bool:
+        """False only for a configured channel marked as not reporting lock."""
+        for ch in self.channels:
+            if ch.group_id == group_id:
+                return ch.reports_lock
+        return True
 
     def bounce_via(self, target_group_id: int) -> int:
         """A Group ID to bounce a receiver through when forcing a re-acquire.
@@ -274,6 +288,7 @@ def parse(data: object, path: Path) -> Config:
                 note=str(raw.get("note", "")),
                 multicast_group=raw.get("multicast_group") or None,
                 show_button=bool(raw.get("show_button", True)),
+                reports_lock=bool(raw.get("reports_lock", True)),
             )
         )
 

@@ -2248,6 +2248,70 @@ class TestChannelsAndBatch(unittest.TestCase):
         self.assertFalse(batch["running"])
 
 
+class TestChannelsThatDoNotReportLock(unittest.TestCase):
+    """On a software stream a VEO's lock flag keeps whatever the previous
+    channel left it with (event log, 2026-09-23), so it must not raise an
+    alarm there -- nor stay quiet on the hardware channels."""
+
+    def _poller(self):
+        from eclermanager.poller import Poller
+        payload = {
+            "channels": [{"group_id": 1, "name": "Production"},
+                         {"group_id": 6, "name": "Production New",
+                          "reports_lock": False}],
+            "receivers": [{"id": "rx-01", "name": "Textile", "ip": "10.0.2.1",
+                           "expected_group_id": 6},
+                          {"id": "rx-02", "name": "Canteen", "ip": "10.0.2.2",
+                           "expected_group_id": 1}],
+        }
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(payload, tmp)
+        tmp.close()
+        self.path = Path(tmp.name)
+        self.addCleanup(lambda: self.path.unlink(missing_ok=True))
+        return Poller(config_mod.load(self.path))
+
+    def _report(self, poller, rid, group_id, lock):
+        poller._apply_status(poller.states[rid], veo.DeviceStatus(
+            host=poller.states[rid].receiver.ip, online=True,
+            group_id=group_id, video_lock=lock))
+
+    def test_setting_round_trips_and_defaults_on(self):
+        poller = self._poller()
+        again = config_mod.load(self.path)
+        self.assertFalse(again.reports_lock(6))
+        self.assertTrue(again.reports_lock(1))
+        self.assertTrue(again.reports_lock(42))          # not configured
+        poller.upsert_channel(1, "Production", reports_lock=False)
+        self.assertFalse(config_mod.load(self.path).reports_lock(1))
+
+    def test_unlock_on_a_software_stream_is_not_no_signal(self):
+        poller = self._poller()
+        for _ in range(3):
+            self._report(poller, "rx-01", 6, False)
+        snap = poller.snapshot()
+        card = next(d for d in snap["devices"] if d["id"] == "rx-01")
+        self.assertIsNone(card["video_lock"])
+        self.assertFalse(card["lock_reported"])
+        self.assertEqual(snap["summary"]["no_signal"], 0)
+        self.assertEqual(poller.states["rx-01"].consecutive_no_signal, 0)
+        self.assertFalse(any(e["kind"] == "signal_lost" for e in poller.events))
+
+    def test_unlock_on_a_hardware_channel_still_counts(self):
+        poller = self._poller()
+        self._report(poller, "rx-02", 1, False)
+        snap = poller.snapshot()
+        self.assertEqual(snap["summary"]["no_signal"], 1)
+        self.assertTrue(any(e["kind"] == "signal_lost" for e in poller.events))
+
+    def test_it_follows_the_channel_a_receiver_is_on_now(self):
+        """Expected on 6 but found on 1: judged by channel 1's rules."""
+        poller = self._poller()
+        self._report(poller, "rx-01", 1, False)
+        card = next(d for d in poller.snapshot()["devices"] if d["id"] == "rx-01")
+        self.assertIs(card["video_lock"], False)
+
+
 class TestScheduledDiscovery(unittest.TestCase):
     """Periodic scanning, when an interval is configured."""
 

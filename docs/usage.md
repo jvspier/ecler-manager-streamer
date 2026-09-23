@@ -171,6 +171,23 @@ with any failures, arrives as a notification.
 One at a time, about three seconds each, so a batch does exactly what
 switching them by hand does.
 
+### "no signal" on a software stream
+
+A VEO's **video lock** flag is set by the hardware transmitters. On a
+software stream it simply keeps whatever the previous channel left it with,
+in either direction, for as long as the receiver stays there. A receiver that
+arrives from a locked channel shows **signal**. One that arrives from an
+unlocked channel (or via the empty channel a re-acquire uses) shows **no
+signal**, although the picture is fine. This was established from the event
+log on 2026-09-23. It first looked like a problem with batch moves, but a
+manual switch from the same unlocked channel did exactly the same.
+
+So untick **lock** for the streamer's channels under **Channels…**. Their
+receivers then show **signal n/a** and are left out of the no-signal count,
+the signal events and auto-nudge. Whether a software stream is actually
+reaching a TV is better judged on the streamer page (its preview and frame
+counters) or by looking at the screen.
+
 **Recent events** at the bottom is collapsed by default and answers "how often
 does this actually happen?" — every drift, signal loss, offline period, switch
 and re-acquire, with a timestamp. Run with `--event-log events.jsonl` to keep
