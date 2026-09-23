@@ -548,8 +548,9 @@ def set_group_id(
 ) -> SwitchResult:
     """Set a receiver's Group ID (channel) and read it back to confirm.
 
-    The device applies ``set_group_id`` live; the front-panel LED is documented
-    not to follow a remotely made change, so the read-back is the truth.
+    The device applies ``set_group_id`` live, front-panel LED included (seen
+    2026-09-23, despite the manual saying a web change leaves it stale); the
+    read-back is what the result reports either way.
     """
     if not GROUP_ID_MIN <= group_id <= GROUP_ID_MAX:
         raise ValueError(

@@ -78,11 +78,11 @@ set to. Switching channels = setting the receiver's Group ID.
 
 ### Two things worth knowing before you trust the UI
 
-1. **The front-panel LED does not follow a remote change.** Ecler's manual says
-   so explicitly for web-driven changes. After switching from this dashboard the
-   LED may still show the old number while the TV shows the new channel. The
-   dashboard reads the channel back from the device after every switch, so *the
-   dashboard is right and the LED is stale* — not the other way round.
+1. **The front-panel LED does follow a change over port 9999.** Ecler's manual
+   says a web-driven change leaves the LED on the old number, but a
+   `set_group_id` from this dashboard was seen on the LED straight away
+   (Group ID 9, 2026-09-23). Either way the dashboard reads the channel back
+   from the device after every switch, so the read-back is what to trust.
 2. **Port 9999 has no authentication.** Anyone who can reach a receiver on that
    port can change what its TV shows. That is the device's design, not this
    tool's. Keep the VEO subnet away from general user access.
