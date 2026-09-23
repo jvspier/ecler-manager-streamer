@@ -151,3 +151,32 @@ class TestStreamPacing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestMimicVeo(unittest.TestCase):
+    """--mimic-veo copies what ffprobe shows of a VEO-XTI1C stream, to find
+    out whether one of those differences is what sets a receiver's lock."""
+
+    _build = staticmethod(TestStreamPacing._build)
+
+    def _after(self, cmd, flag):
+        return cmd[cmd.index(flag) + 1]
+
+    def test_everything_ffprobe_showed_is_copied(self):
+        cmd = self._build(["--group", "239.255.42.51", "--mimic-veo"])
+        self.assertEqual(self._after(cmd, "-profile:v"), "baseline")
+        self.assertEqual(self._after(cmd, "-c:a"), "libmp3lame")
+        # below 32 kHz, so ffmpeg declares stream type 0x04 like the hardware
+        self.assertEqual(self._after(cmd, "-ar"), "24000")
+        self.assertEqual(self._after(cmd, "-mpegts_service_id"), "256")
+        self.assertEqual(self._after(cmd, "-mpegts_start_pid"), "2001")
+        self.assertEqual(self._after(cmd, "-mpegts_transport_stream_id"), "128")
+        self.assertIn("service_name=AIR_CH_521_6M", cmd)
+        # the options belong to the muxer, so before -f mpegts
+        self.assertLess(cmd.index("-mpegts_service_id"), cmd.index("mpegts"))
+
+    def test_default_stream_is_unchanged(self):
+        cmd = self._build(["--group", "239.255.42.51"])
+        self.assertNotIn("-mpegts_service_id", cmd)
+        self.assertIn("-an", cmd)
+        self.assertEqual(self._after(cmd, "-profile:v"), "main")

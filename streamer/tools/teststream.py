@@ -301,7 +301,28 @@ def parse_bitrate(value: str) -> int:
     return int(float(text) * multiplier)
 
 
+#: What a VEO-XTI1C's transport stream looks like, read off channel 2 with
+#: ffprobe (2026-09-23): an ITE reference layout. A receiver shows a picture
+#: from an ffmpeg stream but never sets its video-lock flag from one; these
+#: are the differences ffprobe can see, so --mimic-veo copies all of them.
+VEO_TS_OPTIONS = [
+    "-mpegts_transport_stream_id", "128",
+    "-mpegts_service_id", "256",            # program number
+    "-mpegts_pmt_start_pid", "4096",
+    "-mpegts_start_pid", "2001",            # video 0x7d1 (also PCR), audio 0x7d2
+    "-metadata", "service_provider=ITE",
+    "-metadata", "service_name=AIR_CH_521_6M",
+]
+
+
 def build_command(args: argparse.Namespace) -> list[str]:
+    if getattr(args, "mimic_veo", False):
+        # Everything the hardware stream has that ours did not: an MPEG
+        # audio track (stream type 0x04 needs a rate below 32 kHz, hence
+        # 24 kHz), Constrained Baseline, and the ITE program/PID numbering.
+        args.audio, args.audio_codec = True, "mp3"
+        args.profile, args.veo_ids = "baseline", True
+
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel]
 
     if args.progress_file:
@@ -428,7 +449,12 @@ def build_command(args: argparse.Namespace) -> list[str]:
     else:
         args.muxrate = "0"
 
-    if args.audio:
+    if args.audio and getattr(args, "audio_codec", "aac") == "mp3":
+        # 24 kHz: ffmpeg labels MPEG audio below 32 kHz as stream type 0x04
+        # (MPEG-2 audio), which is what the hardware transmitter declares.
+        cmd += ["-c:a", "libmp3lame", "-b:a", "64k", "-ar", "24000", "-ac", "2",
+                "-shortest"]
+    elif args.audio:
         cmd += ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
                 "-shortest"]
     else:
@@ -477,6 +503,8 @@ def build_command(args: argparse.Namespace) -> list[str]:
                 f"rtp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
                 f"{sndbuf}{pacing}{local}"]
     else:
+        if getattr(args, "veo_ids", False):
+            cmd += VEO_TS_OPTIONS
         cmd += ["-f", "mpegts", "-muxrate", args.muxrate,
                 f"udp://{target}?ttl={args.ttl}&pkt_size={TS_PKT_SIZE}"
                 f"&overrun_nonfatal=1{sndbuf}{pacing}{local}"]
@@ -519,6 +547,16 @@ def build_parser() -> argparse.ArgumentParser:
                         default="main")
     parser.add_argument("--audio", action="store_true",
                         help="include a silent audio track")
+    parser.add_argument("--audio-codec", choices=["aac", "mp3"], default="aac",
+                        help="codec for --audio; the hardware transmitter "
+                             "sends MPEG audio (mp3)")
+    parser.add_argument("--veo-ids", action="store_true",
+                        help="number the transport stream like a VEO-XTI1C: "
+                             "program 256, PIDs 2001/2002, ITE service name")
+    parser.add_argument("--mimic-veo", action="store_true",
+                        help="copy everything ffprobe sees in a VEO-XTI1C "
+                             "stream: --audio --audio-codec mp3 --profile "
+                             "baseline --veo-ids")
     parser.add_argument("--fps", type=int, default=30,
                         help="OUTPUT framerate; the receiver lists 24/25/30/50/60")
     parser.add_argument("--capture-fps", type=float, default=5.0,
