@@ -1027,8 +1027,26 @@ function moveBar(key, groupId, devices) {
       <input type="checkbox" id="mvx-${key}"${setExpected ? " checked" : ""}>
       also make it their expected channel</label>
     <button data-act="batch-move" data-group="${key}"${busy ? " disabled" : ""}
-      title="${busy ? "A move is already running" : "Switch them in the background, one at a time"}">Move</button>`;
+      title="${busy ? "A move is already running" : "Switch them in the background, one at a time"}">Move</button>
+    ${relockButton(key, groupId, devices, busy)}`;
   return bar;
+}
+
+// Receivers on their right channel that report no video lock. After a move,
+// real units showed a picture yet said Unlock until they were switched to
+// another live channel and back; this runs that on each, and reads it back.
+function darkMembers(groupId, devices) {
+  return devices.filter((d) => d.online && d.video_lock === false
+                               && d.group_id === groupId);
+}
+
+function relockButton(key, groupId, devices, busy) {
+  if (groupId === null) return "";
+  const dark = darkMembers(groupId, devices).length;
+  if (!dark) return "";
+  return `<span class="spacer"></span>
+    <button data-act="batch-relock" data-group="${key}"${busy ? " disabled" : ""}
+      title="Switch each to another live channel for a few seconds and back, then check the signal again">Re-lock ${dark} with no signal</button>`;
 }
 
 function foundCard(device) {
@@ -1204,7 +1222,7 @@ function renderBatch() {
   const batch = state.data.batch;
   banner.hidden = !batch?.running;
   if (!batch?.running) return;
-  banner.innerHTML = `<b>Moving receivers</b>
+  banner.innerHTML = `<b>${batch.kind === "relock" ? "Re-locking receivers" : "Moving receivers"}</b>
     <progress max="${batch.total}" value="${batch.done}"></progress>
     <span>${batch.done} of ${batch.total}</span>
     <span class="note">${esc(batch.message || "")}</span>`;
@@ -1216,7 +1234,7 @@ function announceBatch(batch) {
   const finished = state.batchRunning && !running;
   state.batchRunning = running;
   if (!finished) return;
-  const failed = (batch.results || []).filter((r) => !r.ok);
+  const failed = (batch.results || []).filter((r) => !r.ok || r.locked === false);
   toast(batch.message || "Move finished", failed.length ? "bad" : "ok");
   for (const result of failed.slice(0, 8)) {
     toast(`${result.name}: ${result.message}`, "bad");
@@ -1619,6 +1637,10 @@ document.addEventListener("click", async (event) => {
     await batchMove(group);
     return;
   }
+  if (action === "batch-relock") {
+    await batchRelock(group);
+    return;
+  }
   if (action === "setup-close") {
     state.setup = null;
     render();
@@ -1958,6 +1980,35 @@ async function batchMove(key) {
   }
   await reloadForgetting(["mv-" + key, "mvx-" + key]);
   // Follow it closely while it runs; the 5s refresh would do, just slower.
+  do {
+    await load();
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  } while (state.data?.batch?.running);
+  await load();
+}
+
+async function batchRelock(key) {
+  const groupId = Number(key.replace(/^ch/, ""));
+  const dark = darkMembers(groupId, groupMembers(key));
+  if (!dark.length) return;
+  if (!confirm(`Re-lock ${dark.length} receiver(s) that report no signal?\n\n`
+               + "Each shows another channel for a few seconds, then comes back. "
+               + "Their expected channel does not change.")) return;
+  try {
+    const result = await api("/api/batch/move", {
+      method: "POST",
+      body: JSON.stringify({
+        receiver_ids: dark.map((d) => d.id),
+        group_id: groupId,
+        set_expected: false,
+      }),
+    });
+    toast(`Re-locking ${result.accepted} receiver(s) in the background`);
+    state.batchRunning = true;
+  } catch (err) {
+    toast(`Re-lock refused: ${err.message}`, "bad");
+    return;
+  }
   do {
     await load();
     await new Promise((resolve) => setTimeout(resolve, 1200));

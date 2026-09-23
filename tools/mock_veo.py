@@ -33,6 +33,11 @@ class FakeDevice:
         self.video_lock = True
         self.stuck = False
         self.lock = threading.Lock()
+        #: --first-join-unlocked: the channel whose first join leaves this
+        #: device reporting Unlock, and whether that has happened yet.
+        self.unlock_on_join: int | None = None
+        self.joined_before = False
+        self.join_stuck = False
 
     def chaos(self) -> None:
         """Occasionally wander off channel or drop the stream."""
@@ -116,6 +121,17 @@ class Handler(socketserver.StreamRequestHandler):
                 device.group_id = requested
                 device.video_lock = True
                 device.stuck = False
+                if device.unlock_on_join is not None:
+                    # Seen 2026-09-23: moved straight onto the software stream,
+                    # receivers showed a picture but said Unlock. A visit to
+                    # another live channel cleared it; one to 63 (empty) did not.
+                    if requested == device.unlock_on_join:
+                        if not device.joined_before:
+                            device.joined_before = True
+                            device.join_stuck = True
+                        device.video_lock = not device.join_stuck
+                    elif requested != 63:
+                        device.join_stuck = False
             return "OK"
         if command == "_break":
             # Mock-only: reproduce the observed failure on demand, so the
@@ -186,6 +202,9 @@ def main() -> int:
                              "VEO-XRI1C on firmware Rx V1.01.r0 (default)")
     parser.add_argument("--reply-delay", type=float, default=0.0, metavar="SECONDS",
                         help="pause before answering, to emulate slow firmware")
+    parser.add_argument("--first-join-unlocked", type=int, metavar="GROUP",
+                        help="the first switch onto GROUP reports Unlock until the "
+                             "device goes to another live channel and back")
     parser.add_argument("--chaos", type=float, default=0.0, metavar="SECONDS",
                         help="every N seconds, randomly break a device")
     args = parser.parse_args()
@@ -197,6 +216,7 @@ def main() -> int:
         device = FakeDevice(name=f"MOCK-RX-{index + 1}",
                             group_id=(index % 4) + 1,
                             mac=f"00:19:F5:00:00:{index + 1:02X}")
+        device.unlock_on_join = args.first_join_unlocked
         style = args.style if args.style != "mixed" else styles[index % len(styles)]
         serve(host, args.port, device, style, args.reply_delay)
         devices.append(device)

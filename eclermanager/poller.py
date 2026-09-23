@@ -120,6 +120,7 @@ class Poller:
         self.batch_total = 0
         self.batch_done = 0
         self.batch_message = ""
+        self.batch_kind = "move"        # or "relock": all already on the target
         self.batch_results: list[dict] = []
         self._batch_thread: threading.Thread | None = None
         self.last_poll_started: float | None = None
@@ -566,14 +567,31 @@ class Poller:
         self._log_config_event("channel", f"channel {group_id} removed")
 
     # --- batch -----------------------------------------------------------
-    #: Receivers switched at once. One: at four, receivers switched onto the
-    #: same stream in the same instant showed a picture but reported
-    #: "Unlock" indefinitely -- a re-acquire via an empty channel did not
-    #: clear it, switching to another live stream and back did -- while each
-    #: one switched on its own locked (field, 2026-09-23). Why is not known;
-    #: simultaneity was the only difference, since the commands sent are
-    #: identical. A batch of thirty takes about a minute and a half.
+    #: Receivers switched at once. One, so a batch does what switching them by
+    #: hand does. It was four, and the receivers moved that way reported
+    #: Unlock -- but so did receivers moved one at a time, so simultaneity
+    #: was not the cause; the signal check below is what deals with it.
     BATCH_CONCURRENCY = 1
+    #: Before trusting a lock reading after a switch, and how long a re-lock
+    #: leaves a receiver on the channel it came from before bringing it back.
+    BATCH_SETTLE_SECONDS = 6.0
+    BATCH_RELOCK_DWELL_SECONDS = 5.0
+
+    def _read_lock(self, state: ReceiverState) -> bool | None:
+        """Poll one receiver now; the card shows the result straight away."""
+        status = veo.read_status(state.receiver.ip,
+                                 port=self.config.telnet_port,
+                                 timeout=self.config.timeout_seconds)
+        self._apply_status(state, status)
+        return status.video_lock if status.online else None
+
+    def _relock_via(self, came_from: int | None, target: int) -> int | None:
+        """A live channel to step through: where it came from, if it can."""
+        if came_from is not None and came_from != target:
+            return came_from
+        live = [c.group_id for c in self.config.channels
+                if c.group_id != target and c.transmitter_ip]
+        return live[0] if live else None
 
     def start_batch_move(self, receiver_ids: list[str], group_id: int, *,
                          set_expected: bool = True) -> int:
@@ -599,14 +617,20 @@ class Poller:
         if not ids:
             raise ValueError("no receivers given")
 
+        came_from = {rid: self.states[rid].group_id for rid in ids}
+        relock_only = all(came_from[rid] == group_id for rid in ids)
         with self._lock:
             if self.batch_running:
                 raise RuntimeError("a batch move is already running")
             self.batch_running = True
+            self.batch_kind = "relock" if relock_only else "move"
             self.batch_total = len(ids)
             self.batch_done = 0
             self.batch_results = []
-            self.batch_message = f"moving {len(ids)} receiver(s) to channel {group_id}"
+            self.batch_message = (
+                f"re-locking {len(ids)} receiver(s) on channel {group_id}"
+                if relock_only else
+                f"moving {len(ids)} receiver(s) to channel {group_id}")
             if set_expected:
                 for rid in ids:
                     state = self.states[rid]
@@ -635,20 +659,73 @@ class Poller:
                 self.batch_results.append(outcome)
             return outcome
 
+        def relock(outcome: dict) -> None:
+            """What fixed it by hand: away to a live channel, then back.
+
+            Receivers moved by an earlier batch showed a picture but reported
+            Unlock, and stayed that way; a re-acquire via an empty channel
+            did not clear it, and switching to another live channel and back
+            did (field, 2026-09-23). The cause is not known, so the result
+            is read back and reported rather than assumed.
+            """
+            state = self.states[outcome["id"]]
+            via = self._relock_via(came_from[outcome["id"]], group_id)
+            if via is None:
+                outcome["message"] += "; reports no signal (no live channel to re-lock through)"
+                return
+            with self._lock:
+                self.batch_message = f"re-locking {outcome['name']} via channel {via}"
+            away = self.set_channel(outcome["id"], via, source="batch re-lock")
+            if not away.ok:
+                outcome["message"] += f"; reports no signal, re-lock failed: {away.message}"
+                return
+            time.sleep(self.BATCH_RELOCK_DWELL_SECONDS)
+            back = self.set_channel(outcome["id"], group_id, source="batch re-lock")
+            if not back.ok:
+                outcome["ok"] = False
+                outcome["message"] = (f"left on channel {via}: could not return "
+                                      f"to {group_id}: {back.message}")
+                return
+            time.sleep(self.BATCH_SETTLE_SECONDS)
+            outcome["locked"] = self._read_lock(state)
+            outcome["message"] += (
+                f"; re-locked via channel {via}" if outcome["locked"]
+                else f"; still reports no signal after going via channel {via}")
+
+        def check_signal() -> None:
+            moved = [r for r in self.batch_results if r["ok"]]
+            if not moved:
+                return
+            with self._lock:
+                self.batch_message = "checking the signal on every moved receiver"
+            time.sleep(self.BATCH_SETTLE_SECONDS)
+            for outcome in moved:
+                outcome["locked"] = self._read_lock(self.states[outcome["id"]])
+            for outcome in moved:
+                if outcome["locked"] is False:
+                    relock(outcome)
+
         def run() -> None:
             try:
                 with ThreadPoolExecutor(max_workers=self.BATCH_CONCURRENCY,
                                         thread_name_prefix="veo-batch") as pool:
                     list(pool.map(one, ids))
+                check_signal()
             except Exception:                       # never kill the thread quietly
                 log.exception("batch move failed")
             finally:
                 with self._lock:
                     failed = sum(1 for r in self.batch_results if not r["ok"])
+                    dark = sum(1 for r in self.batch_results
+                               if r["ok"] and r.get("locked") is False)
+                    done = self.batch_total - failed
                     self.batch_message = (
-                        f"moved {self.batch_total - failed} of "
-                        f"{self.batch_total} to channel {group_id}"
-                        + (f"; {failed} failed" if failed else ""))
+                        (f"re-locked {done - dark} of {self.batch_total} "
+                         f"on channel {group_id}"
+                         if relock_only else
+                         f"moved {done} of {self.batch_total} to channel {group_id}")
+                        + (f"; {failed} failed" if failed else "")
+                        + (f"; {dark} still report no signal" if dark else ""))
                     self.batch_running = False
 
         thread = threading.Thread(target=run, name="veo-batch", daemon=True)
@@ -1306,6 +1383,7 @@ class Poller:
                 },
                 "batch": {
                     "running": self.batch_running,
+                    "kind": self.batch_kind,
                     "total": self.batch_total,
                     "done": self.batch_done,
                     "message": self.batch_message,

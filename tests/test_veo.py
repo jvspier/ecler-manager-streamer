@@ -2098,7 +2098,16 @@ class TestChannelsAndBatch(unittest.TestCase):
         tmp.close()
         self.path = Path(tmp.name)
         self.addCleanup(lambda: self.path.unlink(missing_ok=True))
-        return Poller(config_mod.load(self.path))
+        poller = Poller(config_mod.load(self.path))
+        # Every receiver starts on channel 1 and locks; nothing waits, and
+        # nothing touches a network.
+        for rid, state in poller.states.items():
+            state.status = veo.DeviceStatus(host=state.receiver.ip, online=True,
+                                            group_id=1, video_lock=True)
+        poller.BATCH_SETTLE_SECONDS = 0
+        poller.BATCH_RELOCK_DWELL_SECONDS = 0
+        poller._read_lock = lambda state: True
+        return poller
 
     def _fake_switch(self, poller, *, fail=()):
         """Replace the network call; record what the manager believed then."""
@@ -2190,8 +2199,7 @@ class TestChannelsAndBatch(unittest.TestCase):
         self.assertIn("1 failed", poller.batch_message)
 
     def test_receivers_are_switched_one_at_a_time(self):
-        """Switched together onto one stream, real receivers showed a picture
-        but reported Unlock until moved to another live channel and back."""
+        """A batch does what switching them by hand does, one after another."""
         import threading as _threading
         poller = self._poller()
         active, peak, guard = [0], [0], _threading.Lock()
@@ -2212,6 +2220,65 @@ class TestChannelsAndBatch(unittest.TestCase):
         poller.start_batch_move([f"rx-{n:02d}" for n in range(1, 7)], 6)
         self._wait(poller)
         self.assertEqual(peak[0], 1)
+
+    def test_a_receiver_that_locks_is_left_alone(self):
+        poller = self._poller()
+        seen = self._fake_switch(poller)
+        poller.start_batch_move(["rx-01", "rx-02"], 6)
+        self._wait(poller)
+        self.assertEqual([(rid, g) for rid, g, _ in seen],
+                         [("rx-01", 6), ("rx-02", 6)])
+        self.assertTrue(all(r["locked"] for r in poller.batch_results))
+        self.assertNotIn("no signal", poller.batch_message)
+
+    def test_no_signal_after_the_switch_is_relocked_via_where_it_came_from(self):
+        """Away to a live channel and back: what cleared it by hand."""
+        poller = self._poller()
+        seen = self._fake_switch(poller)
+        readings = {"rx-02": [False, True]}
+        poller._read_lock = lambda state: (
+            readings[state.receiver.id].pop(0) if state.receiver.id in readings
+            else True)
+        poller.start_batch_move(["rx-01", "rx-02"], 6)
+        self._wait(poller)
+        self.assertEqual([(rid, g) for rid, g, _ in seen],
+                         [("rx-01", 6), ("rx-02", 6), ("rx-02", 1), ("rx-02", 6)])
+        second = next(r for r in poller.batch_results if r["id"] == "rx-02")
+        self.assertTrue(second["locked"])
+        self.assertIn("re-locked via channel 1", second["message"])
+        self.assertNotIn("no signal", poller.batch_message)
+
+    def test_a_receiver_that_stays_dark_is_reported_not_counted_as_fine(self):
+        poller = self._poller()
+        self._fake_switch(poller)
+        poller._read_lock = lambda state: False
+        poller.start_batch_move(["rx-01"], 6)
+        self._wait(poller)
+        self.assertIn("1 still report no signal", poller.batch_message)
+        self.assertFalse(poller.batch_results[0]["locked"])
+
+    def test_relocking_receivers_already_on_the_channel(self):
+        """The "Re-lock N with no signal" button: same channel, no new
+        expectation, stepped through a live channel and read back."""
+        poller = self._poller()
+        poller.config.channels[1].transmitter_ip = "10.0.1.2"   # 2 is live
+        for state in poller.states.values():
+            state.status.group_id = 1
+        seen = self._fake_switch(poller)
+        readings = {"rx-01": [False, True]}
+        poller._read_lock = lambda state: readings[state.receiver.id].pop(0)
+        poller.start_batch_move(["rx-01"], 1, set_expected=False)
+        self._wait(poller)
+        self.assertEqual([(rid, g) for rid, g, _ in seen],
+                         [("rx-01", 1), ("rx-01", 2), ("rx-01", 1)])
+        self.assertEqual(poller.snapshot()["batch"]["kind"], "relock")
+        self.assertEqual(poller.batch_message, "re-locked 1 of 1 on channel 1")
+
+    def test_relock_never_steps_through_the_target_itself(self):
+        poller = self._poller()
+        poller.config.channels[0].transmitter_ip = "10.0.1.1"
+        self.assertEqual(poller._relock_via(6, 6), 1)
+        self.assertIsNone(poller._relock_via(None, 1))   # only channel 1 is live
 
     def test_a_second_batch_is_refused_while_one_runs(self):
         import threading as _threading
