@@ -202,7 +202,9 @@ channel the streamer serves then shows that stream's state:
 | **streamer unreachable** | the streamer is not answering |
 
 Anything but the first also marks the group and the header, and changes are
-logged in **Recent events**. It watches the source, not each receiver's
+logged in **Recent events**. A restart quick enough to fall between two
+polls still shows up there, as **stream restarted**: the streamer reports
+when each stream started, and the manager notices when that moves. It watches the source, not each receiver's
 decoder: a single TV with a bad cable still needs eyes on it. Without a
 streamer address, those TVs show **signal n/a**.
 

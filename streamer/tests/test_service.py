@@ -337,6 +337,7 @@ class TestHttp(unittest.TestCase):
         self.assertEqual([st["channel"] for st in streams], [5])
         self.assertIn(streams[0]["health"],
                       {"ok", "slow", "stalled", "down", "off"})
+        self.assertIn("started", streams[0])
         self.assertNotIn("url", streams[0])
         self.assertNotIn("name", streams[0])
 

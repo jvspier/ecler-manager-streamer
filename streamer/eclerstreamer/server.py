@@ -351,6 +351,9 @@ class Handler(BaseHTTPRequestHandler):
                     "drop_frames": found.get("drop_frames"),
                     "progress_age": None if age is None else round(age, 1),
                     "restarts": status.get("restarts", 0),
+                    # When the current ffmpeg started: a change between two
+                    # of the manager's polls is a restart it did not see.
+                    "started": status.get("since", ""),
                 })
             payload = {"version": __version__, "server_time": time.time(),
                        "streams": streams}

@@ -1202,6 +1202,7 @@ class Poller:
             fetched, error = None, f"{type(exc).__name__}: {exc}"
         with self._lock:
             before = {ch: s.get("health") for ch, s in self.streams.items()}
+            started_before = {ch: s.get("started") for ch, s in self.streams.items()}
             was_unreachable = bool(self.streamer_error)
             if fetched is not None:
                 self.streams = fetched
@@ -1215,6 +1216,16 @@ class Poller:
             return
         for channel, stream in sorted(fetched.items()):
             health, previous = stream.get("health"), before.get(channel)
+            started, was_started = stream.get("started"), started_before.get(channel)
+            if (previous is not None and health == previous and started
+                    and was_started and started != was_started):
+                # Down and back up between two polls: the outage itself was
+                # never seen, so without this it would leave no trace.
+                self._log_config_event(
+                    "stream_restarted",
+                    f"channel {channel}: restarted between checks "
+                    f"(running since {started})", "streamer")
+                continue
             if previous is None or health == previous:
                 continue
             kind = "stream_ok" if health == "ok" else "stream_problem"

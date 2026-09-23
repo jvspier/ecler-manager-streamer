@@ -2365,6 +2365,19 @@ class TestStreamerHealth(unittest.TestCase):
         self.assertEqual(kinds, ["stream_problem", "stream_ok"])
         self.assertIn("channel 6: ok -> down", poller.events[0]["message"])
 
+    def test_a_restart_between_two_polls_is_still_logged(self):
+        """Out for ten seconds, back before the next poll: no health change
+        was ever seen, but the start time moved."""
+        poller = self._poller()
+        replies = [[{"channel": 6, "health": "ok", "started": "Tue 12:00:00"}],
+                   [{"channel": 6, "health": "ok", "started": "Tue 12:00:00"}],
+                   [{"channel": 6, "health": "ok", "started": "Tue 12:32:10"}]]
+        poller._fetch_streams = lambda url: replies.pop(0)
+        for _ in range(3):
+            poller.refresh_streams()
+        self.assertEqual([e["kind"] for e in poller.events], ["stream_restarted"])
+        self.assertIn("Tue 12:32:10", poller.events[0]["message"])
+
     def test_an_unreachable_streamer_makes_its_streams_unknown(self):
         poller = self._poller()
         self._serve(poller, "ok")
