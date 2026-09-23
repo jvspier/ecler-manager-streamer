@@ -638,6 +638,11 @@ async function load() {
     const fresh = await api("/api/state");
     state.data = fresh;
     announceBatch(fresh.batch);
+    if (isPicking()) {                 // a dropdown is open: don't close it
+      renderStats();
+      renderBatch();
+      return;
+    }
     // Always render: skipping it used to leave a stale "busy" overlay on a
     // card whose action had already finished.  Typed values survive because
     // they are captured into state.draft first.
@@ -1298,7 +1303,57 @@ function renderFound() {
     .replaceChildren(...devices.map(foundCard));
 }
 
+// --- focus across re-renders ---------------------------------------------
+// A render replaces the cards wholesale, focused input included. Drafts keep
+// the text; this keeps the cursor. An open dropdown cannot be reopened from
+// script at all, so while one is being picked from, the refresh leaves the
+// page alone (see load) and only the counters update.
+
+let pickingSince = 0;   // a <select> was pressed and has not changed or blurred
+document.addEventListener("pointerdown", (event) => {
+  if (event.target.closest?.("select")) pickingSince = Date.now();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.target.closest?.("select")) pickingSince = Date.now();
+});
+// Only the select's own events end it: pressing a dropdown also blurs
+// whatever was focused before, and that focusout arrives after pointerdown.
+for (const type of ["change", "focusout"]) {
+  document.addEventListener(type, (event) => {
+    if (event.target.closest?.("select")) pickingSince = 0;
+  });
+}
+
+function isPicking() {
+  // Bounded, so a dropdown left focused cannot freeze a monitoring page.
+  return pickingSince > 0 && Date.now() - pickingSince < 30000;
+}
+
+function focusKey(el) {
+  if (!el || el === document.body || !el.matches) return null;
+  if (!el.matches("input, select, textarea")) return null;
+  if (el.id) return "#" + CSS.escape(el.id);
+  const { act, id } = el.dataset || {};
+  return act ? `[data-act="${CSS.escape(act)}"]` +
+               (id ? `[data-id="${CSS.escape(id)}"]` : "") : null;
+}
+
 function render() {
+  const before = document.activeElement;
+  const key = focusKey(before);
+  let start = null, end = null;
+  try { start = before.selectionStart; end = before.selectionEnd; } catch { /* not text */ }
+  renderPage();
+  if (!key || before.isConnected) return;   // still there: nothing was lost
+  const after = document.querySelector(key);
+  if (!after || typeof after.focus !== "function") return;
+  after.focus({ preventScroll: true });
+  if (start !== null && start !== undefined) {
+    try { after.setSelectionRange(start, end); } catch { /* not text */ }
+  }
+}
+
+function renderPage() {
   renderStats();
   renderBatch();
   renderChannels();

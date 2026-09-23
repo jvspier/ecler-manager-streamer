@@ -221,7 +221,10 @@ async function api(path, options) {
 // The 10s refresh re-renders everything, so anything half-typed is captured
 // first. Skipping the render instead would leave stale status on screen.
 function captureDrafts() {
-  for (const input of document.querySelectorAll("input[id], textarea[id]")) {
+  // select too: without a draft, fillHost put the saved restart interval
+  // back over a choice not yet saved.
+  for (const input of document.querySelectorAll(
+        "input[id], textarea[id], select[id]")) {
     // Skip anything inside a collapsed panel. Those inputs exist in the DOM
     // but have never been filled, so capturing their empty value records it
     // as a draft the user typed -- and the panel can then never populate
@@ -341,7 +344,46 @@ function card(dash) {
   return node;
 }
 
+// --- focus across re-renders ---------------------------------------------
+// A render replaces the cards wholesale, focused input included. Drafts keep
+// the text; this keeps the cursor. An open dropdown cannot be reopened from
+// script at all, so while one is being picked from the refresh waits.
+
+let pickingSince = 0;   // a <select> was pressed and has not changed or blurred
+for (const type of ["pointerdown", "keydown"]) {
+  document.addEventListener(type, (event) => {
+    if (event.target.closest?.("select")) pickingSince = Date.now();
+  });
+}
+// Only the select's own events end it: pressing a dropdown also blurs
+// whatever was focused before, and that focusout arrives after pointerdown.
+for (const type of ["change", "focusout"]) {
+  document.addEventListener(type, (event) => {
+    if (event.target.closest?.("select")) pickingSince = 0;
+  });
+}
+function isPicking() {
+  // Bounded, so a dropdown left focused cannot freeze the status display.
+  return pickingSince > 0 && Date.now() - pickingSince < 30000;
+}
+
 function render() {
+  const before = document.activeElement;
+  const key = before && before !== document.body && before.id
+    && before.matches?.("input, select, textarea") ? before.id : null;
+  let start = null, end = null;
+  try { start = before.selectionStart; end = before.selectionEnd; } catch { /* not text */ }
+  renderPage();
+  if (!key || before.isConnected) return;   // still there: nothing was lost
+  const after = document.getElementById(key);
+  if (!after || typeof after.focus !== "function") return;
+  after.focus({ preventScroll: true });
+  if (start !== null && start !== undefined) {
+    try { after.setSelectionRange(start, end); } catch { /* not text */ }
+  }
+}
+
+function renderPage() {
   const cards = document.getElementById("cards");
   const list = state.data.dashboards || [];
   if (!list.length) {
@@ -367,9 +409,13 @@ function render() {
 }
 
 async function load() {
-  captureDrafts();
   try {
-    state.data = await api("/api/state");
+    const fresh = await api("/api/state");
+    if (isPicking()) return;           // a dropdown is open: don't close it
+    // Captured after the fetch, not before: a key pressed while the request
+    // was out would otherwise be overwritten by the older draft.
+    captureDrafts();
+    state.data = fresh;
     render();
   } catch (err) {
     toast(`Cannot reach the streamer: ${err.message}`, "bad");
