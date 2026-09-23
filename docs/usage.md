@@ -168,20 +168,8 @@ send it back. A unit that is offline or does not answer is reported and
 skipped, and the rest carry on. Progress shows in a banner, and the result,
 with any failures, arrives as a notification.
 
-**The move checks its own work.** Receivers moved onto a new stream have
-been seen to show a picture but report **no signal**, and stay that way. That
-happened moving them together and again one at a time, while others switched
-by hand locked normally; the cause is not known. A **re-acquire** did not
-clear it. Switching the receiver to another live channel and back did. So a
-few seconds after the move, every moved receiver's lock is read. Any that
-report no signal are sent back to the channel they came from for a few
-seconds, returned, and read again. The result lists each one: moved, re-locked
-via channel N, or still no signal.
-
-Receivers already stuck like that get a **Re-lock N with no signal** button
-on their group. It runs the same step on just those receivers: each shows
-another live channel for a few seconds, and its expected channel is left
-alone.
+One at a time, about three seconds each, so a batch does exactly what
+switching them by hand does.
 
 **Recent events** at the bottom is collapsed by default and answers "how often
 does this actually happen?" — every drift, signal loss, offline period, switch

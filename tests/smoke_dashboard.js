@@ -183,13 +183,6 @@ function fail(message) { throw new Error(message); }
       || fail("move bar with nowhere to go should point at Channels…");
     api.state.data = STATE;
     if (api.groupMembers("ch1").length !== 1) fail("groupMembers(ch1)");
-    const dark = [{ ...STATE.devices[0], video_lock: false }];
-    if (!api.moveBar("ch1", 1, dark).innerHTML.includes("Re-lock 1")) {
-      fail("a group with a dark receiver offers no re-lock");
-    }
-    if (api.moveBar("ch1", 1, STATE.devices).innerHTML.includes("Re-lock")) {
-      fail("re-lock offered with every receiver locked");
-    }
     const buttons = api.channelButtons(STATE.devices[0]);
     if (buttons.includes("Production (stream)")) {
       fail("a channel with show_button off still got a card button");
