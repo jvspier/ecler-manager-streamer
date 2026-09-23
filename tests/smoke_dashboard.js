@@ -46,10 +46,12 @@ const STATE = {
                  suggested_id: "rx-50", suggested_name: "VEO-XRI1C" }],
   discovery: { ranges: ["10.0.2.1-254"], interval_hours: 0, running: false,
                message: "", scanned: 0, error: "", last: null },
+  streamer: { url: "http://10.0.0.21:8478", error: "", checked_at: 0,
+              streams: [{ channel: 6, health: "down" }] },
   batch: { running: true, total: 3, done: 1, message: "moving 3 to channel 6",
            results: [] },
   summary: { total: 1, online: 1, offline: 0, drifted: 0, no_signal: 0,
-             held: 0, dhcp: 0, by_actual_channel: {}, by_expected_channel: {} },
+             held: 0, dhcp: 0, stream_problems: [6], by_actual_channel: {}, by_expected_channel: {} },
   poll: { interval_seconds: 30, last_started: 0, last_finished: 0, count: 1,
           auto_repair: false, auto_nudge_on_signal_loss: false },
   events: [{ ts: 0, receiver_id: "rx-01", receiver_name: "A", kind: "switch",
@@ -159,6 +161,12 @@ function fail(message) { throw new Error(message); }
     api.deviceCard({ ...STATE.devices[0], drifted: true, group_id: 2 });
     api.deviceCard({ ...STATE.devices[0], held: true, held_from_group_id: 1 });
     api.deviceCard({ ...STATE.devices[0], video_lock: false, dhcp: true });
+    for (const health of ["ok", "slow", "stalled", "down", "off", "unknown", "weird"]) {
+      const card = api.deviceCard({ ...STATE.devices[0], video_lock: null,
+        lock_reported: false, stream: { channel: 6, health, fps: "29.97" } });
+      if (!card.innerHTML.includes("stream")) fail(`no stream chip for ${health}`);
+      if (card.innerHTML.includes("signal n/a")) fail("stream known, yet signal n/a");
+    }
     if (!api.deviceCard({ ...STATE.devices[0], video_lock: null, lock_reported: false })
           .innerHTML.includes("signal n/a")) {
       fail("a receiver on a software stream should say signal n/a");

@@ -310,6 +310,14 @@
     margin: -4px 0 14px; font-size: 12px; color: var(--muted);
   }
   .move-bar select { width: auto; }
+  .streamer-row { margin: 0 0 14px; }
+  .streamer-row input {
+    font: inherit; font-size: 12.5px; width: 260px; max-width: 100%;
+    color: var(--text); background: var(--raised);
+    border: 1px solid transparent; border-radius: var(--r-md); padding: 8px 11px;
+  }
+  .streamer-row input:focus { outline: none; border-color: var(--ch); }
+  .streamer-row .note.err { font-family: inherit; }
   .move-bar button { font-size: 12px; padding: 7px 12px; }
 
   /* Channels nobody watches, folded into one line instead of a heading each. */
@@ -673,6 +681,13 @@ function renderStats() {
   ];
   if (summary.held) items.push(["held dark", summary.held, "alert"]);
   if (summary.dhcp) items.push(["on DHCP", summary.dhcp, "alert"]);
+  const streams = summary.stream_problems || [];
+  if (state.data.streamer?.error && streams.length) {
+    items.push(["unreachable", "streamer", "alert"]);
+  } else if (streams.length) {
+    items.push([streams.length === 1 ? "stream not ok" : "streams not ok",
+                `ch ${streams.join(", ")}`, "alert"]);
+  }
   if (poll.auto_repair) items.push(["auto-repair", "on", ""]);
   if (poll.auto_nudge_on_signal_loss) items.push(["auto-nudge", "on", ""]);
   document.getElementById("stats").innerHTML = items
@@ -731,8 +746,13 @@ function deviceCard(device) {
   if (!device.online) {
     chips.push(`<span class="chip bad">offline</span>`);
   } else {
+    if (device.stream) {
+      chips.push(streamChip(device.stream));
+    }
     if (device.lock_reported === false) {
-      chips.push(`<span class="chip" title="This channel is a software stream. The VEO's lock flag only reflects the channel it was on before, so it is not shown.">signal n/a</span>`);
+      if (!device.stream) {
+        chips.push(`<span class="chip" title="This channel is a software stream. The VEO's lock flag only reflects the channel it was on before, so it is not shown. Set the streamer's address under Channels… to see the stream's state here.">signal n/a</span>`);
+      }
     } else if (device.video_lock === true) chips.push(`<span class="chip ok">signal</span>`);
     else if (device.video_lock === false) chips.push(`<span class="chip warn">no signal</span>`);
     else chips.push(`<span class="chip">signal unknown</span>`);
@@ -879,8 +899,40 @@ function channelTint(groupId) {
 function deviceHealth(device) {
   if (device.held) return "held";
   if (!device.online) return "bad";
-  if (device.drifted || device.video_lock === false) return "warn";
+  if (device.drifted || device.video_lock === false || streamTrouble(device)) return "warn";
   return "ok";
+}
+
+// The streamer's verdict on the stream a receiver is on, when it serves it.
+const STREAM_CHIPS = {
+  ok: ["ok", "stream"],
+  slow: ["warn", "stream slow"],
+  stalled: ["bad", "stream stalled"],
+  down: ["bad", "stream down"],
+  off: ["warn", "stream off"],
+  unknown: ["warn", "streamer unreachable"],
+};
+const STREAM_MEANING = {
+  ok: "running and keeping up",
+  slow: "encoding slower than real time, so frames are being lost",
+  stalled: "the process runs, but the encoder has stopped reporting progress",
+  down: "meant to be streaming, but not running",
+  off: "switched off on the streamer",
+  unknown: "the streamer is not answering; this is its last known state",
+};
+
+function streamTrouble(device) {
+  return Boolean(device.stream && device.stream.health !== "ok");
+}
+
+function streamChip(stream) {
+  const [cls, label] = STREAM_CHIPS[stream.health] || ["warn", `stream ${stream.health}`];
+  const fps = stream.health === "ok" && stream.fps ? ` · ${Math.round(Number(stream.fps))} fps` : "";
+  const detail = [`Streamer: ${STREAM_MEANING[stream.health] || stream.health}`];
+  if (stream.speed) detail.push(`speed ${stream.speed}`);
+  if (stream.drop_frames) detail.push(`${stream.drop_frames} frames dropped`);
+  if (stream.restarts) detail.push(`${stream.restarts} restart(s)`);
+  return `<span class="chip ${cls}" title="${esc(detail.join(" · "))}">${label}${fps}</span>`;
 }
 
 function advancedPanel(device) {
@@ -934,7 +986,8 @@ function groupSection({ key, groupId, name, note, transmitter, multicast,
   const offline = devices.filter((d) => !d.online).length;
   const drifted = devices.filter((d) => d.drifted).length;
   const noSignal = devices.filter((d) => d.online && d.video_lock === false).length;
-  const hasIssue = Boolean(drifted || noSignal || offline);
+  const streamBad = devices.find((d) => d.online && streamTrouble(d))?.stream;
+  const hasIssue = Boolean(drifted || noSignal || offline || streamBad);
   const expanded = unsorted.length === 0
     ? false                           // nothing to expand
     : key in state.groupOverride
@@ -956,6 +1009,7 @@ function groupSection({ key, groupId, name, note, transmitter, multicast,
     if (drifted) chips.push(`<span class="chip warn">${drifted} wrong channel</span>`);
     if (noSignal) chips.push(`<span class="chip warn">${noSignal} no signal</span>`);
     if (offline) chips.push(`<span class="chip bad">${offline} offline</span>`);
+    if (streamBad) chips.push(streamChip(streamBad));
     if (!chips.length) chips.push(`<span class="chip ok">all good</span>`);
   }
 
@@ -1193,7 +1247,21 @@ function renderChannels() {
   const panel = document.getElementById("channels-panel");
   panel.hidden = !state.channelsOpen;
   if (!state.channelsOpen) return;
+  const streamer = state.data.streamer || {};
+  const reached = !streamer.url ? "not set: software streams show signal n/a"
+    : streamer.error ? `not answering: ${streamer.error}`
+    : streamer.checked_at
+      ? `answering · ${(streamer.streams || []).length} stream(s) · checked ${fmtTime(streamer.checked_at)}`
+      : "not checked yet";
   document.getElementById("channels-body").innerHTML = `
+    <div class="move-bar streamer-row">
+      <span>Streamer</span>
+      <input id="streamer-url" value="${esc(draftOr("streamer-url", streamer.url || ""))}"
+             placeholder="http://streamer-address:8478" aria-label="Streamer address"
+             title="The streamer's web address. The manager reads its public /api/streams to show whether each software stream is running.">
+      <button data-act="streamer-save">Save</button>
+      <span class="note${streamer.error ? " err" : ""}">${esc(reached)}</span>
+    </div>
     <div class="chan-table">
       <div class="chan-row head"><span>Group ID</span><span>Name</span>
         <span>Source IP</span><span>Multicast</span><span>Note</span>
@@ -1603,6 +1671,22 @@ document.addEventListener("click", async (event) => {
       return;
     }
     await reloadForgetting([`chn-${key}-`]);
+    return;
+  }
+  if (action === "streamer-save") {
+    const url = document.getElementById("streamer-url").value.trim();
+    try {
+      const result = await api("/api/streamer", {
+        method: "POST", body: JSON.stringify({ url }),
+      });
+      toast(!result.url ? "Streamer address cleared"
+            : result.error ? `Saved, but the streamer is not answering: ${result.error}`
+            : "Streamer address saved; it answers", result.error ? "bad" : "ok");
+    } catch (err) {
+      toast(`Not saved: ${err.message}`, "bad");
+      return;
+    }
+    await reloadForgetting(["streamer-url"]);
     return;
   }
   if (action === "channel-delete") {

@@ -27,7 +27,12 @@ from .auth import SESSION_COOKIE, Auth
 log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-PUBLIC_PATHS = {"/login", "/healthz"}
+# /api/streams is public on purpose: it is what the manager reads to show
+# whether a stream is running, so it must not need the streamer's login. It
+# carries channel numbers, a verdict and encoder figures -- no URLs, names or
+# settings -- and is cached, so polling it cannot pile up systemctl calls.
+PUBLIC_PATHS = {"/login", "/healthz", "/api/streams"}
+STREAMS_CACHE_SECONDS = 5.0
 MAX_BODY_BYTES = 64 * 1024
 
 _DASHBOARD_ROUTE = re.compile(r"^/api/dashboards/(\d{1,2})(?:/([a-z-]{1,16}))?$")
@@ -320,6 +325,38 @@ class Handler(BaseHTTPRequestHandler):
             "server_time": time.time(),
         }
 
+    #: Set per server by make_server, like the other bound attributes.
+    streams_lock: threading.Lock
+    streams_cache: tuple[float, dict] | None = None
+
+    def _streams(self) -> dict:
+        """Per-channel verdicts for the manager. See control.health."""
+        cls = type(self)
+        with cls.streams_lock:
+            cached = cls.streams_cache
+            if cached and time.monotonic() - cached[0] < STREAMS_CACHE_SECONDS:
+                return cached[1]
+            cfg = self._load()
+            streams = []
+            for d in cfg.dashboards:
+                status = control.status(d.channel)
+                found = control.progress(d.channel)
+                age = control.progress_age(d.channel)
+                streams.append({
+                    "channel": d.channel,
+                    "health": control.health(d.enabled, status, found, age),
+                    "active": status.get("active", "unknown"),
+                    "fps": found.get("fps"),
+                    "speed": found.get("speed"),
+                    "drop_frames": found.get("drop_frames"),
+                    "progress_age": None if age is None else round(age, 1),
+                    "restarts": status.get("restarts", 0),
+                })
+            payload = {"version": __version__, "server_time": time.time(),
+                       "streams": streams}
+            cls.streams_cache = (time.monotonic(), payload)
+            return payload
+
     # --- routes ----------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
@@ -334,6 +371,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True})
             if path == "/api/state":
                 return self._send_json(self._state())
+            if path == "/api/streams":
+                return self._send_json(self._streams())
             preview = _PREVIEW_ROUTE.match(path)
             if preview:
                 return self._serve_preview(int(preview.group(1)))
@@ -553,6 +592,7 @@ def make_server(config_path: Path, host: str, port: int,
         # One writer at a time: two browser tabs saving at once would
         # otherwise read, edit and write the same file over each other.
         "lock": threading.Lock(),
+        "streams_lock": threading.Lock(),
     })
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True

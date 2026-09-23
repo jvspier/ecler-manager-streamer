@@ -125,6 +125,10 @@ class Poller:
         self.batch_total = 0
         self.batch_done = 0
         self.batch_message = ""
+        # What the streamer last said about its channels, keyed by channel.
+        self.streams: dict[int, dict] = {}
+        self.streamer_error = ""
+        self.streamer_checked_at: float | None = None
         self.batch_results: list[dict] = []
         self._batch_thread: threading.Thread | None = None
         self.last_poll_started: float | None = None
@@ -161,6 +165,10 @@ class Poller:
                 self.poll_once()
             except Exception:                       # keep the loop alive
                 log.exception("poll cycle failed")
+            try:
+                self.refresh_streams()
+            except Exception:
+                log.exception("streamer check failed")
             try:
                 self._maybe_discover()
             except Exception:
@@ -1147,22 +1155,88 @@ class Poller:
         self.refresh_soon()
         return receiver
 
-    def _log_config_event(self, kind: str, message: str) -> None:
+    def _log_config_event(self, kind: str, message: str,
+                          source: str = "scan") -> None:
         event = {
             "ts": time.time(),
             "receiver_id": "-",
-            "receiver_name": "scan",
+            "receiver_name": source,
             "kind": kind,
             "message": message,
         }
         self.events.append(event)
-        log.info("scan [%s] %s", kind, message)
+        log.info("%s [%s] %s", source, kind, message)
         if self.event_log_path is not None:
             try:
                 with self.event_log_path.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps(event) + "\n")
             except OSError as exc:
                 log.warning("cannot write event log: %s", exc)
+
+    # --- streamer ----------------------------------------------------------
+    STREAMER_TIMEOUT = 3.0
+
+    def _fetch_streams(self, url: str) -> list[dict]:
+        import urllib.request
+        with urllib.request.urlopen(f"{url}/api/streams",
+                                    timeout=self.STREAMER_TIMEOUT) as response:
+            payload = json.loads(response.read(256 * 1024))
+        streams = payload.get("streams")
+        if not isinstance(streams, list):
+            raise ValueError("reply has no stream list -- is this the streamer?")
+        return [s for s in streams
+                if isinstance(s, dict) and isinstance(s.get("channel"), int)]
+
+    def refresh_streams(self) -> None:
+        """Ask the streamer how its channels are doing; log what changed."""
+        url = self.config.streamer_url
+        if not url:
+            with self._lock:
+                self.streams, self.streamer_error = {}, ""
+                self.streamer_checked_at = None
+            return
+        try:
+            fetched = {s["channel"]: s for s in self._fetch_streams(url)}
+            error = ""
+        except Exception as exc:                    # any failure is "unreachable"
+            fetched, error = None, f"{type(exc).__name__}: {exc}"
+        with self._lock:
+            before = {ch: s.get("health") for ch, s in self.streams.items()}
+            was_unreachable = bool(self.streamer_error)
+            if fetched is not None:
+                self.streams = fetched
+            self.streamer_error = error
+            self.streamer_checked_at = time.time()
+        if error and not was_unreachable:
+            self._log_config_event("streamer_unreachable", error, "streamer")
+        elif not error and was_unreachable:
+            self._log_config_event("streamer_reachable", "answering again", "streamer")
+        if fetched is None:
+            return
+        for channel, stream in sorted(fetched.items()):
+            health, previous = stream.get("health"), before.get(channel)
+            if previous is None or health == previous:
+                continue
+            kind = "stream_ok" if health == "ok" else "stream_problem"
+            self._log_config_event(
+                kind, f"channel {channel}: {previous} -> {health}", "streamer")
+
+    def stream_view(self, group_id: int | None) -> dict | None:
+        """The streamer's verdict for a channel it serves, or None."""
+        if group_id is None or group_id not in self.streams:
+            return None
+        view = dict(self.streams[group_id])
+        if self.streamer_error:                     # last known, but stale
+            view["health"] = "unknown"
+        return view
+
+    def set_streamer_url(self, url: str | None) -> None:
+        with self._lock:
+            self.config.streamer_url = url
+        self.config.save()
+        self._log_config_event("config", f"streamer address set to {url or 'none'}",
+                               "streamer")
+        self.refresh_streams()
 
     def reload(self, config: Config) -> None:
         """Adopt a new config in place.
@@ -1271,7 +1345,12 @@ class Poller:
                 )
                 if state.receiver.enabled
             ]
+            for d in devices:
+                d["stream"] = self.stream_view(d["group_id"]) if d["online"] else None
             online = sum(1 for d in devices if d["online"])
+            # Channels a TV is actually on whose stream is not fine.
+            troubled = sorted({d["group_id"] for d in devices
+                               if d["stream"] and d["stream"]["health"] != "ok"})
             return {
                 "devices": devices,
                 "channels": [c.as_dict() for c in self.config.channels],
@@ -1287,6 +1366,7 @@ class Poller:
                     # On DHCP with no DHCP server on the VLAN, these revert to
                     # the factory-default address on their next reboot.
                     "dhcp": sum(1 for d in devices if d["dhcp"] is True),
+                    "stream_problems": troubled,
                     # Where receivers actually are, by channel, regardless of
                     # what they are assigned to.  Answers "so where did the
                     # office screens end up?" directly.
@@ -1313,6 +1393,12 @@ class Poller:
                     "scanned": self.discovery_scanned,
                     "error": self.discovery_error,
                     "last": self.last_discovery,
+                },
+                "streamer": {
+                    "url": self.config.streamer_url,
+                    "error": self.streamer_error,
+                    "checked_at": self.streamer_checked_at,
+                    "streams": [self.streams[ch] for ch in sorted(self.streams)],
                 },
                 "batch": {
                     "running": self.batch_running,

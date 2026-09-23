@@ -183,10 +183,28 @@ log on 2026-09-23. It first looked like a problem with batch moves, but a
 manual switch from the same unlocked channel did exactly the same.
 
 So untick **lock** for the streamer's channels under **Channels…**. Their
-receivers then show **signal n/a** and are left out of the no-signal count,
-the signal events and auto-nudge. Whether a software stream is actually
-reaching a TV is better judged on the streamer page (its preview and frame
-counters) or by looking at the screen.
+receivers are then left out of the no-signal count, the signal events and
+auto-nudge.
+
+What replaces the check is the streamer itself. Enter its address at the top
+of **Channels…** (e.g. `http://10.0.0.21:8478`, the one you open it on). Each
+poll the manager reads the streamer's `/api/streams` (public and read-only:
+channel numbers and encoder figures, no URLs or settings). Every TV on a
+channel the streamer serves then shows that stream's state:
+
+| Chip | Meaning |
+|---|---|
+| **stream · 30 fps** | running and keeping up |
+| **stream slow** | encoding slower than real time; frames are being lost |
+| **stream stalled** | the process runs, but ffmpeg stopped reporting progress |
+| **stream down** | meant to be streaming, but not running |
+| **stream off** | disabled on the streamer |
+| **streamer unreachable** | the streamer is not answering |
+
+Anything but the first also marks the group and the header, and changes are
+logged in **Recent events**. It watches the source, not each receiver's
+decoder: a single TV with a bad cable still needs eyes on it. Without a
+streamer address, those TVs show **signal n/a**.
 
 **Recent events** at the bottom is collapsed by default and answers "how often
 does this actually happen?" — every drift, signal loss, offline period, switch

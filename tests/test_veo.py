@@ -2312,6 +2312,111 @@ class TestChannelsThatDoNotReportLock(unittest.TestCase):
         self.assertIs(card["video_lock"], False)
 
 
+class TestStreamerHealth(unittest.TestCase):
+    """A software stream's receivers cannot report lock, so the manager asks
+    the streamer whether the stream itself is running."""
+
+    def _poller(self, url="http://streamer.test:8478"):
+        from eclermanager.poller import Poller
+        payload = {
+            "streamer_url": url,
+            "channels": [{"group_id": 2, "name": "Office"},
+                         {"group_id": 6, "name": "Production New",
+                          "reports_lock": False}],
+            "receivers": [{"id": "rx-01", "name": "Textile", "ip": "10.0.2.1",
+                           "expected_group_id": 6},
+                          {"id": "rx-02", "name": "Canteen", "ip": "10.0.2.2",
+                           "expected_group_id": 2}],
+        }
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(payload, tmp)
+        tmp.close()
+        self.path = Path(tmp.name)
+        self.addCleanup(lambda: self.path.unlink(missing_ok=True))
+        poller = Poller(config_mod.load(self.path))
+        for rid, group in (("rx-01", 6), ("rx-02", 2)):
+            poller.states[rid].status = veo.DeviceStatus(
+                host="x", online=True, group_id=group, video_lock=None)
+        return poller
+
+    def _serve(self, poller, *healths):
+        replies = [[{"channel": 6, "health": h, "fps": "30"}] for h in healths]
+        poller._fetch_streams = lambda url: replies.pop(0)
+
+    def _card(self, poller, rid):
+        return next(d for d in poller.snapshot()["devices"] if d["id"] == rid)
+
+    def test_a_receiver_on_a_streamer_channel_shows_the_stream(self):
+        poller = self._poller()
+        self._serve(poller, "ok")
+        poller.refresh_streams()
+        self.assertEqual(self._card(poller, "rx-01")["stream"]["health"], "ok")
+        self.assertIsNone(self._card(poller, "rx-02")["stream"])   # hardware
+        self.assertEqual(poller.snapshot()["summary"]["stream_problems"], [])
+
+    def test_a_stream_going_down_is_counted_and_logged(self):
+        poller = self._poller()
+        self._serve(poller, "ok", "down", "ok")
+        poller.refresh_streams()
+        poller.refresh_streams()
+        self.assertEqual(poller.snapshot()["summary"]["stream_problems"], [6])
+        poller.refresh_streams()
+        kinds = [e["kind"] for e in poller.events]
+        self.assertEqual(kinds, ["stream_problem", "stream_ok"])
+        self.assertIn("channel 6: ok -> down", poller.events[0]["message"])
+
+    def test_an_unreachable_streamer_makes_its_streams_unknown(self):
+        poller = self._poller()
+        self._serve(poller, "ok")
+        poller.refresh_streams()
+
+        def refuse(url):
+            raise OSError("connection refused")
+        poller._fetch_streams = refuse
+        poller.refresh_streams()
+        poller.refresh_streams()                     # logged once, not per poll
+        self.assertEqual(self._card(poller, "rx-01")["stream"]["health"], "unknown")
+        self.assertEqual(poller.snapshot()["summary"]["stream_problems"], [6])
+        self.assertEqual([e["kind"] for e in poller.events], ["streamer_unreachable"])
+
+    def test_no_address_means_no_stream_info(self):
+        poller = self._poller(url=None)
+        poller.refresh_streams()
+        self.assertIsNone(self._card(poller, "rx-01")["stream"])
+
+    def test_address_validation(self):
+        clean = config_mod.clean_streamer_url
+        self.assertEqual(clean(" http://10.0.0.21:8478/ "), "http://10.0.0.21:8478")
+        self.assertIsNone(clean(""))
+        for bad in ("10.0.0.21:8478", "ftp://x", "http://x/api/streams",
+                    "http://user@x", "http://x:99999"):
+            with self.assertRaises(ValueError, msg=bad):
+                clean(bad)
+
+    def test_fetch_reads_a_real_http_reply(self):
+        import http.server
+        import threading as _threading
+        body = json.dumps({"streams": [{"channel": 6, "health": "ok"},
+                                       {"channel": "junk"}]}).encode()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200 if self.path == "/api/streams" else 404)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        _threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        poller = self._poller(url=f"http://127.0.0.1:{server.server_address[1]}")
+        self.assertEqual(poller._fetch_streams(poller.config.streamer_url),
+                         [{"channel": 6, "health": "ok"}])
+
+
 class TestScheduledDiscovery(unittest.TestCase):
     """Periodic scanning, when an interval is configured."""
 

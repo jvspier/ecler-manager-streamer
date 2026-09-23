@@ -10,6 +10,7 @@ import logging
 import shutil
 from pathlib import Path
 import subprocess
+import time
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +100,53 @@ def progress(channel: int, run_dir: str = "/run/eclerstreamer") -> dict:
         if sep and key in _PROGRESS_KEYS:
             found[key] = value.strip()
     return found
+
+
+def progress_age(channel: int, run_dir: str = "/run/eclerstreamer",
+                 now: float | None = None) -> float | None:
+    """Seconds since ffmpeg last wrote its progress, or None if it never did.
+
+    ffmpeg writes every 10s. A process that is alive but no longer writing
+    has stopped encoding -- the one failure systemd cannot see.
+    """
+    path = Path(run_dir) / f"progress-{int(channel)}.txt"
+    try:
+        modified = path.stat().st_mtime
+    except OSError:
+        return None
+    return max(0.0, (time.time() if now is None else now) - modified)
+
+
+#: Progress older than this means the encoder has stopped writing: three
+#: missed 10s reports, so one slow write is not an alarm.
+STALL_SECONDS = 30.0
+#: Below this the encoder is falling behind real time and frames are lost.
+SLOW_SPEED = 0.95
+
+
+def health(enabled: bool, status: dict, found: dict,
+           age: float | None) -> str:
+    """One word for "is this channel actually streaming?".
+
+    off      not meant to be streaming
+    down     meant to be, but the unit is not running
+    stalled  running, but the encoder has stopped reporting progress
+    slow     encoding, but slower than real time
+    ok       running and keeping up
+    """
+    if not enabled:
+        return "off"
+    if status.get("active") != "active":
+        return "down"
+    if age is None or age > STALL_SECONDS:
+        return "stalled"
+    try:
+        speed = float(str(found.get("speed", "")).rstrip("x"))
+    except ValueError:
+        speed = None
+    if speed is not None and speed < SLOW_SPEED:
+        return "slow"
+    return "ok"
 
 
 def act(channel: int, action: str) -> tuple[bool, str]:

@@ -292,6 +292,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/batch/move":
                 self._post_batch_move()
                 return
+            if path == "/api/streamer":
+                data = self._read_json_body()
+                try:
+                    url = config_mod.clean_streamer_url(data.get("url"))
+                except ValueError as exc:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, str(exc)) from None
+                self.poller.set_streamer_url(url)
+                self._send_json({"ok": True, "url": url,
+                                 "error": self.poller.streamer_error})
+                return
             if path == "/api/repair":
                 results = self.poller.repair_all()
                 self._send_json({

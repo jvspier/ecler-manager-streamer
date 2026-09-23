@@ -26,6 +26,7 @@ needed.
 | `POST` | `/api/batch/move` | `{"receiver_ids":[…],"group_id":6,"set_expected":true}` | switch many at once, in the background; progress in `/api/state` → `batch` |
 | `POST` | `/api/channels` | group_id, name, transmitter_ip, multicast_group, note, show_button | add or edit a channel |
 | `POST` | `/api/channels/<id>/delete` | – | remove a channel no receiver expects (409 otherwise) |
+| `POST` | `/api/streamer` | `{"url":"http://host:8478"}` | where the streamer is (`""` to stop using it); state in `/api/state` → `streamer` |
 | `POST` | `/api/refresh` | – | poll now instead of waiting |
 | `GET` | `/api/health` | – | liveness; never requires a login |
 | `GET` | `/api/inventory` | – | current names as a `devices.txt` |

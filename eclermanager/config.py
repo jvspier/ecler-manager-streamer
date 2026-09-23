@@ -105,6 +105,10 @@ class Config:
     setup_gateway: str = "10.0.0.1"
     discovery_ranges: list[str] = field(default_factory=list)
     discovery_interval_hours: float = 0.0      # 0 = only when asked
+    #: The streamer's web address, e.g. http://10.0.0.21:8478. Its public
+    #: /api/streams says whether each software stream is running, which is
+    #: the signal check a VEO cannot give on those channels. None = not used.
+    streamer_url: str | None = None
     channels: list[Channel] = field(default_factory=list)
     receivers: list[Receiver] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -179,6 +183,7 @@ class Config:
             "setup_gateway": self.setup_gateway,
             "discovery_ranges": self.discovery_ranges,
             "discovery_interval_hours": self.discovery_interval_hours,
+            "streamer_url": self.streamer_url,
             "channels": [c.as_dict() for c in self.channels],
             "receivers": [r.as_dict() for r in self.receivers],
         }
@@ -201,6 +206,25 @@ class Config:
                 except OSError:
                     pass
                 raise
+
+
+def clean_streamer_url(value: object) -> str | None:
+    """http(s)://host[:port], no path. Raises ValueError otherwise."""
+    from urllib.parse import urlsplit
+    text = str(value or "").strip().rstrip("/")
+    if not text:
+        return None
+    parts = urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("streamer address must look like http://host:8478")
+    if parts.path or parts.query or parts.fragment or parts.username:
+        raise ValueError("streamer address is just scheme, host and port "
+                         "-- no path, e.g. http://10.0.0.21:8478")
+    try:
+        parts.port
+    except ValueError:
+        raise ValueError("streamer address has an invalid port") from None
+    return text
 
 
 def load(path: str | os.PathLike | None = None) -> Config:
@@ -261,6 +285,10 @@ def parse(data: object, path: Path) -> Config:
     cfg.discovery_ranges = ranges
     cfg.discovery_interval_hours = max(
         0.0, float(data.get("discovery_interval_hours", 0.0)))
+    try:
+        cfg.streamer_url = clean_streamer_url(data.get("streamer_url"))
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from None
 
     bounce_via = data.get("bounce_via_group_id")
     if bounce_via is not None:

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from eclerstreamer import config as config_mod  # noqa: E402
 from eclerstreamer import control  # noqa: E402
+from eclerstreamer.auth import Auth, hash_password  # noqa: E402
 from eclerstreamer.server import make_server  # noqa: E402
 
 
@@ -263,6 +264,38 @@ class TestProgress(unittest.TestCase):
             self.assertEqual(control.progress(5, tmp)["speed"], "1.002x")
 
 
+class TestHealth(unittest.TestCase):
+    """The one-word verdict the manager shows on the TVs a stream feeds."""
+
+    RUNNING = {"active": "active"}
+
+    def test_the_verdicts(self):
+        h = control.health
+        self.assertEqual(h(False, self.RUNNING, {"speed": "1.0x"}, 3), "off")
+        self.assertEqual(h(True, {"active": "failed"}, {}, None), "down")
+        self.assertEqual(h(True, {"active": "activating"}, {}, 3), "down")
+        self.assertEqual(h(True, self.RUNNING, {"speed": "1.001x"}, 5), "ok")
+        self.assertEqual(h(True, self.RUNNING, {"speed": "0.80x"}, 5), "slow")
+
+    def test_a_live_process_that_stopped_writing_is_stalled(self):
+        """The failure systemd cannot see: running, but not encoding."""
+        self.assertEqual(control.health(True, self.RUNNING, {"speed": "1x"}, 45),
+                         "stalled")
+        self.assertEqual(control.health(True, self.RUNNING, {}, None), "stalled")
+
+    def test_an_unreadable_speed_is_not_a_fault(self):
+        self.assertEqual(control.health(True, self.RUNNING, {"speed": "N/A"}, 5), "ok")
+
+    def test_progress_age(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(control.progress_age(5, tmp))
+            path = Path(tmp, "progress-5.txt")
+            path.write_text("fps=30\n")
+            modified = path.stat().st_mtime
+            self.assertAlmostEqual(
+                control.progress_age(5, tmp, now=modified + 12), 12, places=3)
+
+
 class TestHttp(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -298,6 +331,28 @@ class TestHttp(unittest.TestCase):
         self.assertEqual(len(state["dashboards"]), 1)
         self.assertEqual(state["dashboards"][0]["multicast"], "239.255.42.47")
         self.assertEqual(state["dashboards"][0]["display_name"], ":105")
+
+    def test_streams_carry_a_verdict_and_nothing_private(self):
+        streams = self._get("/api/streams")["streams"]
+        self.assertEqual([st["channel"] for st in streams], [5])
+        self.assertIn(streams[0]["health"],
+                      {"ok", "slow", "stalled", "down", "off"})
+        self.assertNotIn("url", streams[0])
+        self.assertNotIn("name", streams[0])
+
+    def test_streams_need_no_login_but_state_does(self):
+        """The manager reads it without the streamer's credentials."""
+        self.server.shutdown()
+        self.server.server_close()
+        auth = Auth(user="svc", password_hash=hash_password("not-this"),
+                    session_secret=b"s" * 32)
+        self.server = make_server(self.path, "127.0.0.1", 0, auth=auth)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.assertIn("streams", self._get("/api/streams"))
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self._get("/api/state")
+        self.assertEqual(caught.exception.code, 401)
 
     def test_editing_a_url_persists(self):
         self._post("/api/dashboards/5", {"url": "https://new/"})
