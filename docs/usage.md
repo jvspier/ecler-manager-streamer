@@ -145,6 +145,32 @@ octet (`.2`, `.9`, `.10`, `.100`). Your choice is remembered in the browser.
 **Repair drifted** in the header pushes every off-channel TV back to its
 expected channel in one click.
 
+### Channels, and moving a whole group
+
+**Channels…** in the header lists every channel the manager knows: its Group
+ID, name, the transmitter or streamer sending it, and a note. Add one there
+when a new source appears, such as a software stream on channel 6. Nothing
+fixes a channel's role: "Production" is just the name given to a Group ID, and
+it can live on any of them. **button** decides whether the channel gets a
+one-click button on every card. Untick it for a channel you are retiring, and
+it stays available under **Should be** and **Any channel** (and remains on the
+cards of TVs still meant to be on it). A channel that TVs are still expected
+on cannot be removed; move them first.
+
+An expanded group has a **Move these N to** bar. It switches every receiver in
+that group to the chosen channel in the background, four at a time. With
+**also make it their expected channel** ticked (the default), the new channel
+is written as every receiver's expectation *before* any of them is switched.
+That way Repair and auto-repair never see a half-moved group as drift and
+send it back. A unit that is offline or does not answer is reported and
+skipped, and the rest carry on. Progress shows in a banner, and the result,
+with any failures, arrives as a notification.
+
+Four at a time, not all at once, so the regular polling keeps going
+alongside. And not one by one either: at a second or two per verified
+switch, thirty receivers would keep you waiting for no benefit. Each receiver
+still gets exactly one session at a time, as with every other action.
+
 **Recent events** at the bottom is collapsed by default and answers "how often
 does this actually happen?" — every drift, signal loss, offline period, switch
 and re-acquire, with a timestamp. Run with `--event-log events.jsonl` to keep

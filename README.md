@@ -74,7 +74,8 @@ invented.)*
   transmitter it is meant to be watching. Distinguishes *wrong channel* from
   *right channel, no picture* — a distinction the front panel cannot make.
 - **Switches channels** from the browser, verified by reading the channel back
-  off the device afterwards.
+  off the device afterwards. **Moves a whole group** to another channel in one
+  go, and lets you name, add and retire channels without editing the config.
 - **`identify`** blinks one TV, and **`hold dark`** parks it until you release
   it, so a receiver can be matched to a physical screen without a ladder.
 - **`re-acquire`** forces a receiver to re-join its multicast stream — the

@@ -72,6 +72,7 @@ class LoginThrottle:
 
 #: The action may contain a hyphen ("device-name"), which \w does not cover.
 _RECEIVER_ROUTE = re.compile(r"^/api/receivers/([\w.@:-]{1,64})/([\w-]{1,32})$")
+_CHANNEL_DELETE_ROUTE = re.compile(r"^/api/channels/(\d{1,2})/delete$")
 
 
 class ApiError(Exception):
@@ -281,6 +282,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": all(r.ok for r in results),
                                  "released": [r.as_dict() for r in results]})
                 return
+            if path == "/api/channels":
+                self._post_channel_upsert()
+                return
+            delete = _CHANNEL_DELETE_ROUTE.match(path)
+            if delete:
+                self._post_channel_delete(int(delete.group(1)))
+                return
+            if path == "/api/batch/move":
+                self._post_batch_move()
+                return
             if path == "/api/repair":
                 results = self.poller.repair_all()
                 self._send_json({
@@ -393,6 +404,62 @@ class Handler(BaseHTTPRequestHandler):
         group_id = self._parse_group_id(data, allow_null=True)
         self.poller.set_expected(receiver_id, group_id)
         self._send_json({"ok": True, "receiver_id": receiver_id, "group_id": group_id})
+
+    # --- channels and batch ----------------------------------------------
+    def _optional_ip(self, value: object, field: str, *,
+                     multicast: bool = False) -> str | None:
+        import ipaddress
+        if value in (None, ""):
+            return None
+        try:
+            address = ipaddress.ip_address(str(value).strip())
+        except ValueError:
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           f"{field!r} is not an IP address") from None
+        if multicast and not address.is_multicast:
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           f"{field!r} must be a multicast address (224-239.x.x.x)")
+        return str(address)
+
+    def _post_channel_upsert(self) -> None:
+        data = self._read_json_body()
+        group_id = self._parse_group_id(data, allow_null=False)
+        name = self._clean_label(data.get("name", ""), "name")
+        self.poller.upsert_channel(
+            group_id, name,
+            transmitter_ip=self._optional_ip(data.get("transmitter_ip"),
+                                             "transmitter_ip"),
+            note=self._clean_label(data.get("note", ""), "note", allow_empty=True),
+            multicast_group=self._optional_ip(data.get("multicast_group"),
+                                              "multicast_group", multicast=True),
+            show_button=bool(data.get("show_button", True)),
+        )
+        self._send_json({"ok": True, "group_id": group_id})
+
+    def _post_channel_delete(self, group_id: int) -> None:
+        try:
+            self.poller.delete_channel(group_id)
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.CONFLICT, str(exc)) from None
+        except KeyError as exc:
+            raise ApiError(HTTPStatus.NOT_FOUND, str(exc).strip("'")) from None
+        self._send_json({"ok": True, "group_id": group_id})
+
+    def _post_batch_move(self) -> None:
+        data = self._read_json_body()
+        ids = data.get("receiver_ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            raise ApiError(HTTPStatus.BAD_REQUEST,
+                           "'receiver_ids' must be a list of receiver ids")
+        group_id = self._parse_group_id(data, allow_null=False)
+        try:
+            count = self.poller.start_batch_move(
+                ids, group_id, set_expected=bool(data.get("set_expected", True)))
+        except RuntimeError as exc:
+            raise ApiError(HTTPStatus.CONFLICT, str(exc)) from None
+        except (KeyError, ValueError) as exc:
+            raise ApiError(HTTPStatus.BAD_REQUEST, str(exc).strip("'")) from None
+        self._send_json({"ok": True, "accepted": count}, status=HTTPStatus.ACCEPTED)
 
     def _clean_label(self, value: object, field: str, *,
                      allow_empty: bool = False) -> str:

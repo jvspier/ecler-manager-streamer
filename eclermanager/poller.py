@@ -114,6 +114,14 @@ class Poller:
         self.discovery_scanned = 0
         self.discovery_error = ""
         self._discovery_thread: threading.Thread | None = None
+        # A batch move, followed through the snapshot like a scan is. One at a
+        # time: two overlapping batches could each claim the same receivers.
+        self.batch_running = False
+        self.batch_total = 0
+        self.batch_done = 0
+        self.batch_message = ""
+        self.batch_results: list[dict] = []
+        self._batch_thread: threading.Thread | None = None
         self.last_poll_started: float | None = None
         self.last_poll_finished: float | None = None
         self.poll_count = 0
@@ -497,6 +505,154 @@ class Poller:
             state.consecutive_drift = 0
         self.config.save()
         self._log_event(state.receiver, "config", f"expected channel set to {group_id}")
+
+    # --- channels -------------------------------------------------------
+    def upsert_channel(self, group_id: int, name: str, *,
+                       transmitter_ip: str | None = None, note: str = "",
+                       multicast_group: str | None = None,
+                       show_button: bool = True) -> None:
+        """Add a channel, or change one, and persist it.
+
+        Channels used to exist only in config.json. That was fine while the
+        building had four transmitters on 1-4, but software streams on 5, 6
+        and 7 could not be named, could not be a receiver's expected channel,
+        and got no button -- so there was no way to say "Production now lives
+        on 6" short of editing the file.
+        """
+        from .config import Channel
+        with self._lock:
+            existing = next((c for c in self.config.channels
+                             if c.group_id == group_id), None)
+            if existing is None:
+                self.config.channels.append(Channel(
+                    group_id=group_id, name=name,
+                    transmitter_ip=transmitter_ip, note=note,
+                    multicast_group=multicast_group,
+                    show_button=show_button))
+                self.config.channels.sort(key=lambda c: c.group_id)
+                verb = "added"
+            else:
+                existing.name = name
+                existing.transmitter_ip = transmitter_ip
+                existing.note = note
+                existing.multicast_group = multicast_group
+                existing.show_button = show_button
+                verb = "updated"
+        self.config.save()
+        self._log_config_event("channel", f"channel {group_id} {verb}: {name}")
+
+    def delete_channel(self, group_id: int) -> None:
+        """Remove a channel, refusing while any receiver expects it.
+
+        Deleting one out from under its receivers would leave them expecting
+        a channel the manager no longer knows, and they would quietly drop out
+        of drift detection. Move them first.
+        """
+        with self._lock:
+            expecting = [s.receiver.name for s in self.states.values()
+                         if s.receiver.expected_group_id == group_id]
+            if expecting:
+                shown = ", ".join(expecting[:5])
+                more = f" and {len(expecting) - 5} more" if len(expecting) > 5 else ""
+                raise ValueError(
+                    f"{len(expecting)} receiver(s) expect channel {group_id} "
+                    f"({shown}{more}). Move them to another channel first.")
+            before = len(self.config.channels)
+            self.config.channels = [c for c in self.config.channels
+                                    if c.group_id != group_id]
+            if len(self.config.channels) == before:
+                raise KeyError(f"no channel {group_id}")
+        self.config.save()
+        self._log_config_event("channel", f"channel {group_id} removed")
+
+    # --- batch -----------------------------------------------------------
+    #: Receivers switched at once. The one-session limit is per device, so
+    #: different receivers are independent and a per-host lock already stops
+    #: a batch colliding with a poll of the same unit -- this is about being
+    #: gentle with a network that has been knocked over before, and keeping
+    #: progress readable, not about correctness.
+    BATCH_CONCURRENCY = 4
+
+    def start_batch_move(self, receiver_ids: list[str], group_id: int, *,
+                         set_expected: bool = True) -> int:
+        """Move several receivers to one channel, in the background.
+
+        Returns how many it will touch. Follow progress through the snapshot.
+
+        The expected channel is written first, for all of them at once, and
+        only then are the devices switched. The other order leaves a window
+        in which each receiver reads as drifted -- and with auto-repair on,
+        the manager would put it straight back. A switch that then fails
+        leaves a receiver whose expected channel is right and whose actual
+        channel is not, which is exactly what "wrong channel" should mean,
+        and Repair drifted will finish the job.
+        """
+        if not veo.GROUP_ID_MIN <= group_id <= veo.GROUP_ID_MAX:
+            raise ValueError(f"channel {group_id} is outside "
+                             f"{veo.GROUP_ID_MIN}..{veo.GROUP_ID_MAX}")
+        unknown = [r for r in receiver_ids if r not in self.states]
+        if unknown:
+            raise KeyError(f"no such receiver(s): {', '.join(unknown)}")
+        ids = list(dict.fromkeys(receiver_ids))         # de-duplicate, keep order
+        if not ids:
+            raise ValueError("no receivers given")
+
+        with self._lock:
+            if self.batch_running:
+                raise RuntimeError("a batch move is already running")
+            self.batch_running = True
+            self.batch_total = len(ids)
+            self.batch_done = 0
+            self.batch_results = []
+            self.batch_message = f"moving {len(ids)} receiver(s) to channel {group_id}"
+            if set_expected:
+                for rid in ids:
+                    state = self.states[rid]
+                    state.receiver.expected_group_id = group_id
+                    state.consecutive_drift = 0
+        if set_expected:
+            self.config.save()                      # once, not once per receiver
+            self._log_config_event(
+                "config", f"expected channel set to {group_id} for {len(ids)} receiver(s)")
+
+        def one(rid: str) -> dict:
+            name = self.states[rid].receiver.name
+            if not self.states[rid].receiver.enabled:
+                outcome = {"id": rid, "name": name, "ok": False,
+                           "message": "set aside; not switched"}
+            else:
+                try:
+                    result = self.set_channel(rid, group_id, source="batch")
+                    outcome = {"id": rid, "name": name, "ok": result.ok,
+                               "message": result.message}
+                except Exception as exc:            # one bad unit must not stop the rest
+                    outcome = {"id": rid, "name": name, "ok": False,
+                               "message": f"{type(exc).__name__}: {exc}"}
+            with self._lock:
+                self.batch_done += 1
+                self.batch_results.append(outcome)
+            return outcome
+
+        def run() -> None:
+            try:
+                with ThreadPoolExecutor(max_workers=self.BATCH_CONCURRENCY,
+                                        thread_name_prefix="veo-batch") as pool:
+                    list(pool.map(one, ids))
+            except Exception:                       # never kill the thread quietly
+                log.exception("batch move failed")
+            finally:
+                with self._lock:
+                    failed = sum(1 for r in self.batch_results if not r["ok"])
+                    self.batch_message = (
+                        f"moved {self.batch_total - failed} of "
+                        f"{self.batch_total} to channel {group_id}"
+                        + (f"; {failed} failed" if failed else ""))
+                    self.batch_running = False
+
+        thread = threading.Thread(target=run, name="veo-batch", daemon=True)
+        self._batch_thread = thread
+        thread.start()
+        return len(ids)
 
     def set_labels(self, receiver_id: str, name: str,
                    location: str | None = None,
@@ -1145,6 +1301,13 @@ class Poller:
                     "scanned": self.discovery_scanned,
                     "error": self.discovery_error,
                     "last": self.last_discovery,
+                },
+                "batch": {
+                    "running": self.batch_running,
+                    "total": self.batch_total,
+                    "done": self.batch_done,
+                    "message": self.batch_message,
+                    "results": list(self.batch_results),
                 },
                 "events": list(reversed(self.events)),
                 "server_time": time.time(),

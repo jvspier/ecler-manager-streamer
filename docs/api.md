@@ -23,6 +23,9 @@ needed.
 | `POST` | `/api/receivers/<id>/device-name` | `{"name":"…"}` | set the name stored in the device |
 | `POST` | `/api/receivers/<id>/address` | ip, netmask, gateway | move it, and follow it in the config |
 | `POST` | `/api/repair` | – | fix every drifted receiver |
+| `POST` | `/api/batch/move` | `{"receiver_ids":[…],"group_id":6,"set_expected":true}` | switch many at once, in the background; progress in `/api/state` → `batch` |
+| `POST` | `/api/channels` | group_id, name, transmitter_ip, multicast_group, note, show_button | add or edit a channel |
+| `POST` | `/api/channels/<id>/delete` | – | remove a channel no receiver expects (409 otherwise) |
 | `POST` | `/api/refresh` | – | poll now instead of waiting |
 | `GET` | `/api/health` | – | liveness; never requires a login |
 | `GET` | `/api/inventory` | – | current names as a `devices.txt` |

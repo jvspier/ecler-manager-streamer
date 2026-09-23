@@ -275,6 +275,51 @@
   .advanced button { font-size: 12px; padding: 8px 12px; white-space: nowrap; }
   .advanced .warn-note { font-size: 11.5px; color: var(--warn); }
 
+  /* The channel editor and the group move bar share the editor inputs. */
+  .chan-table { display: flex; flex-direction: column; gap: 8px; padding: 0 0 6px; }
+  .chan-row {
+    display: grid; align-items: center; gap: 7px;
+    /* Fixed trailing columns: each row is its own grid, and "Add" versus
+       "Save", or a Remove button versus none, would otherwise shift them. */
+    grid-template-columns: 64px minmax(140px, 2fr) minmax(110px, 1fr)
+                           minmax(110px, 1fr) minmax(120px, 2fr) 76px 64px 76px;
+  }
+  .chan-row.head { font-size: 11px; color: var(--muted); }
+  .chan-row .num { font-family: var(--mono); font-size: 13px; color: var(--text); }
+  .chan-row input:not([type=checkbox]), .chan-row select, .move-bar select {
+    font: inherit; font-size: 12.5px; min-width: 0; width: 100%;
+    color: var(--text); background: var(--raised);
+    border: 1px solid transparent; border-radius: var(--r-md); padding: 8px 11px;
+  }
+  .chan-row input:focus, .chan-row select:focus, .move-bar select:focus {
+    outline: none; border-color: var(--ch);
+  }
+  .chan-row label, .move-bar label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--muted); white-space: nowrap;
+  }
+  .chan-row button { font-size: 12px; padding: 8px 12px; white-space: nowrap; }
+  .chan-row .num, .chan-row select#chn-new-id { width: 100%; }
+  @media (max-width: 900px) {
+    .chan-row { grid-template-columns: 1fr 1fr; }
+    .chan-row.head { display: none; }
+  }
+
+  .move-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+    margin: -4px 0 14px; font-size: 12px; color: var(--muted);
+  }
+  .move-bar select { width: auto; }
+  .move-bar button { font-size: 12px; padding: 7px 12px; }
+
+  .batch-banner {
+    display: flex; align-items: center; gap: 12px; margin: 4px 0 22px;
+    padding: 11px 14px; border-radius: var(--r-md); background: var(--surface);
+    border-left: 3px solid var(--ch); font-size: 12.5px;
+  }
+  .batch-banner[hidden] { display: none; }
+  .batch-banner progress { flex: 0 1 220px; accent-color: var(--ch); }
+
   .rename { display: flex; flex-direction: column; gap: 7px; }
   .rename input { width: 100%; border-color: var(--ch); }
   .rename .row2 { display: flex; gap: 7px; }
@@ -366,6 +411,8 @@
     <span class="sep"></span>
     <button id="setup" title="Set up a factory-default device and add it to the fleet">Set up new device</button>
     <button id="scan" title="Look for VEO devices on the network that are not in the config">Scan network</button>
+    <button id="channels-open"
+       title="Name the channels, add one such as a software stream, and choose which get a button on every card">Channels…</button>
     <span class="sep"></span>
     <a id="export" href="/api/inventory" download="devices.txt"
        title="Download the current names as a devices.txt, so your naming work has a second copy">Export names</a>
@@ -382,6 +429,21 @@
 </header>
 
 <main>
+  <div class="batch-banner" id="batch-banner" role="status" hidden></div>
+  <section class="group has-issue open" id="channels-panel" hidden>
+    <div class="group-head" style="cursor:default">
+      <span class="group-num">#</span>
+      <span style="min-width:0">
+        <span class="group-name" style="display:block">Channels</span>
+        <span class="group-sub" style="display:block">Each channel is a Group ID
+          (0-63). Ticking "button" puts it on every card; the rest stay under
+          "Should be" and "Any channel".</span>
+      </span>
+      <span class="spacer"></span>
+      <button data-act="channels-close">Close</button>
+    </div>
+    <div id="channels-body"></div>
+  </section>
   <section class="group has-issue open" id="setup-panel" hidden>
     <div class="group-head" style="cursor:default">
       <span class="group-num">+</span>
@@ -450,6 +512,8 @@ const state = {
   advanced: null,          // receiver id whose device settings are showing
   actions: new Set(),      // receiver ids showing the full action list
   setup: null,             // what is sitting on the factory-default address
+  channelsOpen: false,     // the channel editor is showing
+  batchRunning: false,     // last seen state of the background move
   sort: "name",
   // Values typed into an open editor, so a re-render does not discard them.
   draft: {},
@@ -465,8 +529,10 @@ const STORE_KEY = "ecler.view";
 function captureDrafts() {
   for (const input of document.querySelectorAll(
         ".rename input, .advanced input, .advanced select, "
-        + "#setup-body input")) {
-    if (input.id) state.draft[input.id] = input.value;
+        + "#setup-body input, #channels-body input, #channels-body select, "
+        + ".move-bar input, .move-bar select")) {
+    if (!input.id) continue;
+    state.draft[input.id] = input.type === "checkbox" ? input.checked : input.value;
   }
 }
 
@@ -480,6 +546,25 @@ function clearDrafts(prefixes) {
   for (const key of Object.keys(state.draft)) {
     if (prefixes.some((prefix) => key.startsWith(prefix))) {
       delete state.draft[key];
+    }
+  }
+}
+
+// load() for after a save: the saved editor's drafts are dropped in the same
+// step that the fresh state lands. Clearing them before an ordinary load()
+// does nothing -- it captures what is still in the inputs first -- and a
+// render in between would show, and then capture, the old values.
+async function reloadForgetting(prefixes) {
+  try {
+    const fresh = await api("/api/state");
+    captureDrafts();
+    clearDrafts(prefixes);
+    state.data = fresh;
+    announceBatch(fresh.batch);
+    render();
+  } catch (err) {
+    if (err.message !== "login required") {
+      toast("Cannot reach the manager: " + err.message, "bad");
     }
   }
 }
@@ -552,6 +637,7 @@ async function load() {
   try {
     const fresh = await api("/api/state");
     state.data = fresh;
+    announceBatch(fresh.batch);
     // Always render: skipping it used to leave a stale "busy" overlay on a
     // card whose action had already finished.  Typed values survive because
     // they are captured into state.draft first.
@@ -599,7 +685,11 @@ function renderStats() {
 }
 
 function channelButtons(device) {
-  return (state.data.channels || []).map((channel) => {
+  // A channel left off the buttons still shows on the cards that are meant to
+  // be on it, so "put it back" stays one click.
+  return (state.data.channels || []).filter((channel) =>
+    channel.show_button !== false
+    || channel.group_id === device.expected_group_id).map((channel) => {
     const cls = [];
     if (channel.group_id === device.group_id) cls.push("current");
     if (channel.group_id === device.expected_group_id) cls.push("expected");
@@ -884,12 +974,45 @@ function groupSection({ key, groupId, name, note, transmitter, multicast,
       : "No TV is set to show this channel.";
     section.append(empty);
   } else if (expanded) {
+    section.append(moveBar(key, groupId, devices));
     const grid = document.createElement("div");
     grid.className = "grid";
     grid.replaceChildren(...devices.map(deviceCard));
     section.append(grid);
   }
   return section;
+}
+
+// Moves every receiver in the group in one go. Only configured channels are
+// offered: with "also make it their expected channel" on, moving them to a
+// channel the config does not know would leave them in no group at all.
+function moveBar(key, groupId, devices) {
+  const bar = document.createElement("div");
+  bar.className = "move-bar";
+  const targets = (state.data.channels || [])
+    .filter((channel) => channel.group_id !== groupId);
+  if (!targets.length) {
+    bar.innerHTML = `<span>Add a channel under <b>Channels…</b> to move these
+      ${devices.length} receivers somewhere else in one go.</span>`;
+    return bar;
+  }
+  const chosen = String(draftOr("mv-" + key, ""));
+  const options = [`<option value="">– pick a channel –</option>`]
+    .concat(targets.map((channel) =>
+      `<option value="${channel.group_id}"`
+      + `${String(channel.group_id) === chosen ? " selected" : ""}>`
+      + `${channel.group_id} · ${esc(channel.name)}</option>`)).join("");
+  const setExpected = draftOr("mvx-" + key, true) !== false;
+  const busy = state.data.batch?.running;
+  bar.innerHTML = `
+    <span>Move these ${devices.length} to</span>
+    <select id="mv-${key}" aria-label="Target channel">${options}</select>
+    <label title="Otherwise they count as drifted, and Repair or auto-repair would send them back">
+      <input type="checkbox" id="mvx-${key}"${setExpected ? " checked" : ""}>
+      also make it their expected channel</label>
+    <button data-act="batch-move" data-group="${key}"${busy ? " disabled" : ""}
+      title="${busy ? "A move is already running" : "Switch them in the background, four at a time"}">Move</button>`;
+  return bar;
 }
 
 function foundCard(device) {
@@ -1004,6 +1127,86 @@ function renderDisabled() {
   if (state.disabledOpen) grid.replaceChildren(...devices.map(disabledCard));
 }
 
+function channelRow(channel) {
+  const key = channel ? String(channel.group_id) : "new";
+  const value = (field, fallback) => esc(draftOr(`chn-${key}-${field}`, fallback));
+  const used = new Set((state.data.channels || []).map((c) => c.group_id));
+  let number;
+  if (channel) {
+    number = `<span class="num">${channel.group_id}</span>`;
+  } else {
+    const picked = String(draftOr("chn-new-id", ""));
+    const free = [];
+    for (let id = 0; id <= 63; id += 1) {
+      if (used.has(id)) continue;
+      free.push(`<option value="${id}"${String(id) === picked ? " selected" : ""}>${id}</option>`);
+    }
+    number = `<select id="chn-new-id" aria-label="Group ID">
+      <option value="">ID</option>${free.join("")}</select>`;
+  }
+  const button = draftOr(`chn-${key}-btn`, channel ? channel.show_button !== false : true);
+  const assigned = channel ? state.data.devices
+    .filter((d) => d.expected_group_id === channel.group_id).length : 0;
+  return `<div class="chan-row">
+      ${number}
+      <input id="chn-${key}-name" value="${value("name", channel?.name)}" maxlength="64"
+             placeholder="Name, e.g. Production" aria-label="Name">
+      <input id="chn-${key}-tx" value="${value("tx", channel?.transmitter_ip)}"
+             placeholder="Source IP" aria-label="Transmitter or streamer IP"
+             title="The transmitter or streamer sending this channel (optional)">
+      <input id="chn-${key}-mc" value="${value("mc", channel?.multicast_group)}"
+             placeholder="Multicast" aria-label="Multicast group"
+             title="Only for reference (optional)">
+      <input id="chn-${key}-note" value="${value("note", channel?.note)}" maxlength="64"
+             placeholder="Note (optional)" aria-label="Note">
+      <label><input type="checkbox" id="chn-${key}-btn"${button ? " checked" : ""}> button</label>
+      <button data-act="channel-save" data-group="${key}">${channel ? "Save" : "Add"}</button>
+      ${channel
+        ? `<button class="quiet" data-act="channel-delete" data-group="${key}"
+             ${assigned ? `disabled title="${assigned} receiver(s) are meant to be on it. Move them first."`
+                        : 'title="Remove from the config. Receivers are not touched."'}>Remove</button>`
+        : "<span></span>"}
+    </div>`;
+}
+
+function renderChannels() {
+  const panel = document.getElementById("channels-panel");
+  panel.hidden = !state.channelsOpen;
+  if (!state.channelsOpen) return;
+  document.getElementById("channels-body").innerHTML = `
+    <div class="chan-table">
+      <div class="chan-row head"><span>Group ID</span><span>Name</span>
+        <span>Source IP</span><span>Multicast</span><span>Note</span>
+        <span></span><span></span><span></span></div>
+      ${(state.data.channels || []).map(channelRow).join("")}
+      ${channelRow(null)}
+    </div>`;
+}
+
+function renderBatch() {
+  const banner = document.getElementById("batch-banner");
+  const batch = state.data.batch;
+  banner.hidden = !batch?.running;
+  if (!batch?.running) return;
+  banner.innerHTML = `<b>Moving receivers</b>
+    <progress max="${batch.total}" value="${batch.done}"></progress>
+    <span>${batch.done} of ${batch.total}</span>
+    <span class="note">${esc(batch.message || "")}</span>`;
+}
+
+// Called on every refresh; speaks once, when a move has just finished.
+function announceBatch(batch) {
+  const running = Boolean(batch?.running);
+  const finished = state.batchRunning && !running;
+  state.batchRunning = running;
+  if (!finished) return;
+  const failed = (batch.results || []).filter((r) => !r.ok);
+  toast(batch.message || "Move finished", failed.length ? "bad" : "ok");
+  for (const result of failed.slice(0, 8)) {
+    toast(`${result.name}: ${result.message}`, "bad");
+  }
+}
+
 function renderSetup() {
   const panel = document.getElementById("setup-panel");
   const found = state.setup;
@@ -1097,6 +1300,8 @@ function renderFound() {
 
 function render() {
   renderStats();
+  renderBatch();
+  renderChannels();
   renderSetup();
   renderFound();
   renderDisabled();
@@ -1117,6 +1322,7 @@ function render() {
       name: channel.name,
       note: channel.note,
       transmitter: channel.transmitter_ip,
+      multicast: channel.multicast_group,
       devices,
     }));
   }
@@ -1273,6 +1479,58 @@ document.addEventListener("click", async (event) => {
     state.logOpen = !state.logOpen;
     saveView();
     render();
+    return;
+  }
+  if (action === "channels-close") {
+    state.channelsOpen = false;
+    clearDrafts(["chn-"]);
+    render();
+    return;
+  }
+  if (action === "channel-save") {
+    const key = group;                       // a Group ID, or "new"
+    const read = (field) => document.getElementById(`chn-${key}-${field}`);
+    const groupId = key === "new" ? read("id").value : key;
+    if (groupId === "") { toast("Pick a Group ID for the new channel", "bad"); return; }
+    const name = read("name").value.trim();
+    if (!name) { toast("A channel needs a name", "bad"); return; }
+    try {
+      await api("/api/channels", {
+        method: "POST",
+        body: JSON.stringify({
+          group_id: Number(groupId),
+          name,
+          transmitter_ip: read("tx").value.trim() || null,
+          multicast_group: read("mc").value.trim() || null,
+          note: read("note").value.trim(),
+          show_button: read("btn").checked,
+        }),
+      });
+      toast(`Saved channel ${groupId} · ${name}`, "ok");
+    } catch (err) {
+      toast(`Channel not saved: ${err.message}`, "bad");
+      return;
+    }
+    await reloadForgetting([`chn-${key}-`]);
+    return;
+  }
+  if (action === "channel-delete") {
+    const channel = (state.data.channels || [])
+      .find((c) => String(c.group_id) === group);
+    if (!channel) return;
+    if (!confirm(`Remove channel ${channel.group_id} · ${channel.name} from the config?\n\n`
+                 + "Only the manager's list changes; no receiver is switched.")) return;
+    try {
+      await api(`/api/channels/${channel.group_id}/delete`, { method: "POST" });
+      toast(`Removed channel ${channel.group_id}`, "ok");
+    } catch (err) {
+      toast(`Not removed: ${err.message}`, "bad");
+    }
+    await reloadForgetting([`chn-${channel.group_id}-`]);
+    return;
+  }
+  if (action === "batch-move") {
+    await batchMove(group);
     return;
   }
   if (action === "setup-close") {
@@ -1568,6 +1826,63 @@ async function runScan() {
     : "Nothing new — every VEO that answered is already in the config",
     count ? "ok" : "");
 }
+
+// The receivers in a group section, as the page grouped them.
+function groupMembers(key) {
+  if (key === "unassigned") {
+    const known = new Set((state.data.channels || []).map((c) => c.group_id));
+    return state.data.devices.filter((d) => !known.has(d.expected_group_id));
+  }
+  const groupId = Number(key.replace(/^ch/, ""));
+  return state.data.devices.filter((d) => d.expected_group_id === groupId);
+}
+
+async function batchMove(key) {
+  const select = document.getElementById("mv-" + key);
+  if (!select?.value) { toast("Pick the channel to move them to", "bad"); return; }
+  const target = Number(select.value);
+  const setExpected = document.getElementById("mvx-" + key).checked;
+  const devices = groupMembers(key);
+  const channel = (state.data.channels || []).find((c) => c.group_id === target);
+  const offline = devices.filter((d) => !d.online).length;
+  const lines = [
+    `Switch ${devices.length} receiver(s) to channel ${target} · ${channel?.name ?? "?"}?`,
+    "",
+    setExpected
+      ? "Their expected channel becomes the same, so they move to that group here."
+      : "Their expected channel stays as it is, so they will show as drifted.",
+  ];
+  if (offline) lines.push(`${offline} of them are offline and will be reported as failed.`);
+  if (!confirm(lines.join("\n"))) return;
+  try {
+    const result = await api("/api/batch/move", {
+      method: "POST",
+      body: JSON.stringify({
+        receiver_ids: devices.map((d) => d.id),
+        group_id: target,
+        set_expected: setExpected,
+      }),
+    });
+    toast(`Moving ${result.accepted} receiver(s) in the background`);
+    state.batchRunning = true;     // so the result is announced even if it
+                                   // finishes before the next refresh
+  } catch (err) {
+    toast(`Move refused: ${err.message}`, "bad");
+    return;
+  }
+  await reloadForgetting(["mv-" + key, "mvx-" + key]);
+  // Follow it closely while it runs; the 5s refresh would do, just slower.
+  do {
+    await load();
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  } while (state.data?.batch?.running);
+  await load();
+}
+
+document.getElementById("channels-open").addEventListener("click", () => {
+  state.channelsOpen = !state.channelsOpen;
+  render();
+});
 
 document.getElementById("setup").addEventListener("click", async () => {
   toast("Looking at the factory-default address…");

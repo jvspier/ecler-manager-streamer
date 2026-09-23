@@ -33,7 +33,10 @@ const STATE = {
   }],
   channels: [{
     group_id: 1, name: "Reception", transmitter_ip: "10.0.1.1", note: "",
-    multicast_group: "239.255.42.43",
+    multicast_group: "239.255.42.43", show_button: true,
+  }, {
+    group_id: 6, name: "Production (stream)", transmitter_ip: null, note: "",
+    multicast_group: null, show_button: false,
   }],
   disabled: [{ id: "rx-90", name: "spare", ip: "10.0.2.90", location: "",
                note: "in storage", expected_group_id: null, enabled: false }],
@@ -43,6 +46,8 @@ const STATE = {
                  suggested_id: "rx-50", suggested_name: "VEO-XRI1C" }],
   discovery: { ranges: ["10.0.2.1-254"], interval_hours: 0, running: false,
                message: "", scanned: 0, error: "", last: null },
+  batch: { running: true, total: 3, done: 1, message: "moving 3 to channel 6",
+           results: [] },
   summary: { total: 1, online: 1, offline: 0, drifted: 0, no_signal: 0,
              held: 0, dhcp: 0, by_actual_channel: {}, by_expected_channel: {} },
   poll: { interval_seconds: 30, last_started: 0, last_finished: 0, count: 1,
@@ -116,7 +121,9 @@ const run = new Function(match[1] + "\n;return { captureDrafts, draftOr, " +
   "clearDrafts, render, renderStats, renderFound, renderDisabled, " +
   "renderSetup, deviceCard, advancedPanel, renameEditor, disabledCard, " +
   "foundCard, groupSection, sortDevices, deviceHealth, compareName, " +
-  "compareIp, load, api, toast, esc, fmtTime, withPending };");
+  "compareIp, load, api, toast, esc, fmtTime, withPending, state, " +
+  "channelButtons, channelRow, renderChannels, renderBatch, announceBatch, " +
+  "moveBar, groupMembers };");
 
 let api;
 try {
@@ -125,6 +132,8 @@ try {
   console.error("✗ the script threw while loading:", err.message);
   process.exit(1);
 }
+
+function fail(message) { throw new Error(message); }
 
 (async () => {
   try {
@@ -159,6 +168,32 @@ try {
                        devices: STATE.devices });
     api.groupSection({ key: "empty", groupId: 3, name: "Canteen", note: "",
                        transmitter: "10.0.1.3", multicast: null, devices: [] });
+
+    // Channel editor, group move and the batch banner.
+    api.state.channelsOpen = true;
+    api.render();
+    api.channelRow(STATE.channels[0]);
+    api.channelRow(null);
+    api.renderBatch();
+    api.moveBar("ch1", 1, STATE.devices);
+    api.moveBar("ch1", 1, STATE.devices).innerHTML.includes("6 · Production")
+      || fail("move bar does not offer channel 6");
+    api.state.data = { ...STATE, channels: [STATE.channels[0]] };
+    api.moveBar("ch1", 1, STATE.devices).innerHTML.includes("Channels…")
+      || fail("move bar with nowhere to go should point at Channels…");
+    api.state.data = STATE;
+    if (api.groupMembers("ch1").length !== 1) fail("groupMembers(ch1)");
+    const buttons = api.channelButtons(STATE.devices[0]);
+    if (buttons.includes("Production (stream)")) {
+      fail("a channel with show_button off still got a card button");
+    }
+    if (!api.channelButtons({ ...STATE.devices[0], expected_group_id: 6 })
+          .includes("Production (stream)")) {
+      fail("a card lost the button for its own expected channel");
+    }
+    api.announceBatch({ running: true });
+    api.announceBatch({ running: false, message: "moved 2 of 3", results: [
+      { id: "rx-01", name: "A", ok: false, message: "timed out" }] });
 
     console.log("  ✓ dashboard JavaScript runs: load, render and every card shape");
     process.exit(0);

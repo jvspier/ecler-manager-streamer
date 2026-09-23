@@ -2081,6 +2081,150 @@ class TestNaturalSort(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+class TestChannelsAndBatch(unittest.TestCase):
+    """Editing channels from the manager, and moving receivers in bulk."""
+
+    def _poller(self):
+        from eclermanager.poller import Poller
+        payload = {
+            "channels": [{"group_id": 1, "name": "Production"},
+                         {"group_id": 2, "name": "Office"}],
+            "receivers": [
+                {"id": f"rx-{n:02d}", "name": f"TV {n}", "ip": f"10.0.2.{n}",
+                 "expected_group_id": 1} for n in range(1, 7)],
+        }
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(payload, tmp)
+        tmp.close()
+        self.path = Path(tmp.name)
+        self.addCleanup(lambda: self.path.unlink(missing_ok=True))
+        return Poller(config_mod.load(self.path))
+
+    def _fake_switch(self, poller, *, fail=()):
+        """Replace the network call; record what the manager believed then."""
+        seen = []
+
+        class Result:
+            def __init__(self, ok, message):
+                self.ok, self.message = ok, message
+
+        def set_channel(rid, group_id, *, source="manual"):
+            seen.append((rid, group_id,
+                         poller.states[rid].receiver.expected_group_id))
+            if rid in fail:
+                return Result(False, "timed out")
+            return Result(True, f"confirmed on channel {group_id}")
+
+        poller.set_channel = set_channel
+        return seen
+
+    def _wait(self, poller):
+        poller._batch_thread.join(timeout=10)
+        self.assertFalse(poller.batch_running)
+
+    # --- channels --------------------------------------------------------
+    def test_a_software_stream_channel_can_be_added_and_persists(self):
+        poller = self._poller()
+        poller.upsert_channel(6, "Production (streamer)",
+                              multicast_group="239.255.42.48")
+        again = config_mod.load(self.path)
+        self.assertEqual(again.channel_name(6), "Production (streamer)")
+        self.assertEqual([c.group_id for c in again.channels], [1, 2, 6])
+
+    def test_show_button_round_trips(self):
+        poller = self._poller()
+        poller.upsert_channel(1, "Production (old)", show_button=False)
+        again = config_mod.load(self.path)
+        self.assertFalse(next(c for c in again.channels
+                              if c.group_id == 1).show_button)
+
+    def test_a_channel_in_use_cannot_be_deleted(self):
+        """Its receivers would silently drop out of drift detection."""
+        poller = self._poller()
+        with self.assertRaises(ValueError) as caught:
+            poller.delete_channel(1)
+        self.assertIn("6 receiver(s)", str(caught.exception))
+
+    def test_an_unused_channel_can_be_deleted(self):
+        poller = self._poller()
+        poller.delete_channel(2)
+        self.assertIsNone(config_mod.load(self.path).channel_name(2))
+
+    # --- batch -----------------------------------------------------------
+    def test_expected_is_set_before_any_receiver_is_switched(self):
+        """The other order leaves a window in which every receiver reads as
+        drifted, and auto-repair would put each one straight back."""
+        poller = self._poller()
+        seen = self._fake_switch(poller)
+        ids = [f"rx-{n:02d}" for n in range(1, 7)]
+        poller.start_batch_move(ids, 6)
+        self._wait(poller)
+        self.assertEqual(len(seen), 6)
+        for rid, target, expected_at_the_time in seen:
+            self.assertEqual(expected_at_the_time, 6, rid)
+
+    def test_expected_is_persisted_once_for_the_whole_batch(self):
+        poller = self._poller()
+        self._fake_switch(poller)
+        poller.start_batch_move(["rx-01", "rx-02"], 6)
+        self._wait(poller)
+        again = config_mod.load(self.path)
+        self.assertEqual(
+            {r.id: r.expected_group_id for r in again.receivers}["rx-02"], 6)
+
+    def test_set_expected_false_leaves_expectations_alone(self):
+        poller = self._poller()
+        seen = self._fake_switch(poller)
+        poller.start_batch_move(["rx-01"], 6, set_expected=False)
+        self._wait(poller)
+        self.assertEqual(seen[0][2], 1)
+
+    def test_one_failure_does_not_stop_the_rest(self):
+        poller = self._poller()
+        seen = self._fake_switch(poller, fail={"rx-03"})
+        poller.start_batch_move([f"rx-{n:02d}" for n in range(1, 7)], 6)
+        self._wait(poller)
+        self.assertEqual(len(seen), 6)
+        failed = [r for r in poller.batch_results if not r["ok"]]
+        self.assertEqual([r["id"] for r in failed], ["rx-03"])
+        self.assertIn("1 failed", poller.batch_message)
+
+    def test_a_second_batch_is_refused_while_one_runs(self):
+        import threading as _threading
+        poller = self._poller()
+        gate = _threading.Event()
+
+        class Result:
+            ok, message = True, "ok"
+
+        def slow(rid, group_id, *, source="manual"):
+            gate.wait(5)
+            return Result()
+
+        poller.set_channel = slow
+        poller.start_batch_move(["rx-01"], 6)
+        with self.assertRaises(RuntimeError):
+            poller.start_batch_move(["rx-02"], 6)
+        gate.set()
+        self._wait(poller)
+
+    def test_unknown_receivers_and_channels_are_refused(self):
+        poller = self._poller()
+        with self.assertRaises(KeyError):
+            poller.start_batch_move(["rx-99"], 6)
+        with self.assertRaises(ValueError):
+            poller.start_batch_move(["rx-01"], 64)
+
+    def test_snapshot_reports_progress(self):
+        poller = self._poller()
+        self._fake_switch(poller)
+        poller.start_batch_move(["rx-01", "rx-02"], 6)
+        self._wait(poller)
+        batch = poller.snapshot()["batch"]
+        self.assertEqual((batch["total"], batch["done"]), (2, 2))
+        self.assertFalse(batch["running"])
+
+
 class TestScheduledDiscovery(unittest.TestCase):
     """Periodic scanning, when an interval is configured."""
 

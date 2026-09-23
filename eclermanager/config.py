@@ -34,6 +34,12 @@ class Channel:
     #: it off a transmitter's web page with tools/probe.py.  Recorded here so
     #: a switch's IGMP snooping table can be matched to a channel by name.
     multicast_group: str | None = None
+    #: Whether this channel gets a one-click button on every receiver card.
+    #: Every channel is still offered in "Should be" and in the any-channel
+    #: switcher; this only decides what earns a button. It exists because a
+    #: migration from hardware transmitters to software streams leaves both
+    #: sets configured for a while, and seven buttons a card is too many.
+    show_button: bool = True
 
     def as_dict(self) -> dict:
         return {
@@ -42,6 +48,7 @@ class Channel:
             "transmitter_ip": self.transmitter_ip,
             "note": self.note,
             "multicast_group": self.multicast_group,
+            "show_button": self.show_button,
         }
 
 
@@ -266,6 +273,7 @@ def parse(data: object, path: Path) -> Config:
                 transmitter_ip=raw.get("transmitter_ip") or None,
                 note=str(raw.get("note", "")),
                 multicast_group=raw.get("multicast_group") or None,
+                show_button=bool(raw.get("show_button", True)),
             )
         )
 
