@@ -306,6 +306,17 @@ echo "  $URL"
 #                        and the capture juddered. These three stop it
 #                        backgrounding itself. Verify with top: the browser
 #                        should show real CPU while the page animates.
+#   --autoplay-policy=no-user-gesture-required
+#                        Chromium refuses to autoplay a video with sound until
+#                        someone has clicked the page, and nobody clicks a
+#                        wall. A dashboard announcement (a video) then sat on
+#                        its first frame for as long as nobody restarted the
+#                        channel, while the page waited for it to finish.
+#                        Reproduced on Debian 13's Chromium with these flags:
+#                        play() rejected with NotAllowedError; with this flag
+#                        the same video played to the end. No sound card is
+#                        needed -- Chromium plays on silently without one --
+#                        and the stream has no audio track anyway.
 #   --test-type          suppresses the yellow "you are using an unsupported
 #                        command-line flag: --no-sandbox" infobar, which
 #                        otherwise steals ~70px off the top of every frame.
@@ -337,6 +348,7 @@ BROWSER_ARGS=(
     --disable-background-timer-throttling
     --disable-backgrounding-occluded-windows
     --disable-renderer-backgrounding
+    --autoplay-policy=no-user-gesture-required
     --window-size="$WIDTH,$HEIGHT"
     --user-data-dir="$PROFILE"
     # Now that the profile persists, a browser that did not exit cleanly would

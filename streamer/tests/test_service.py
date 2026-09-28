@@ -156,6 +156,18 @@ class TestUnitFiles(unittest.TestCase):
                       self._unit("dashboard-stream@.service"))
 
 
+class TestBrowserFlags(unittest.TestCase):
+    """Flags whose absence fails silently, on a wall, much later."""
+
+    def test_videos_with_sound_may_autoplay(self):
+        """Without it an announcement video never starts: the page waits for
+        it to end and the dashboard freezes on its first frame (2026-09-28)."""
+        script = (ROOT / "tools" / "pagesource.sh").read_text()
+        args = script[script.index("BROWSER_ARGS=("):]
+        args = args[:args.index("\n)")]
+        self.assertIn("--autoplay-policy=no-user-gesture-required", args)
+
+
 class TestInputValidation(unittest.TestCase):
     """Everything a web form can send reaches either a browser command line
     or an encoder, so it is checked where it enters."""
