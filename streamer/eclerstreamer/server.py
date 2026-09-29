@@ -494,6 +494,11 @@ class Handler(BaseHTTPRequestHandler):
                 dash.size = size
             if "enabled" in body:
                 dash.enabled = bool(body["enabled"])
+            if "encoder" in body:
+                if body["encoder"] not in config_mod.ENCODERS:
+                    raise ApiError(HTTPStatus.BAD_REQUEST,
+                                   f"encoder is one of {', '.join(config_mod.ENCODERS)}")
+                dash.encoder = body["encoder"]
             for key, cast in (("fps", int), ("display", int),
                               ("capture_fps", float)):
                 if key in body and body[key] is not None:

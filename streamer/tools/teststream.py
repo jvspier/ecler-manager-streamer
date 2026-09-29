@@ -315,6 +315,132 @@ VEO_TS_OPTIONS = [
 ]
 
 
+def x264_video_args(args: argparse.Namespace, gop: int) -> list[str]:
+    """Software encoding with x264: what every stream used before the GPU.
+
+    Sets args.muxrate as a side effect, because the transport stream's
+    constant rate follows from the video rate chosen here.
+    """
+    video: list[str] = []
+    video += [
+        "-c:v", "libx264",
+        "-profile:v", args.profile,
+        "-level", "4.0",
+        "-pix_fmt", "yuv420p",          # 8-bit 4:2:0; anything else is a risk
+        "-preset", "veryfast",
+        "-b:v", args.bitrate,
+        "-maxrate", args.bitrate,
+        "-bufsize", args.bitrate,
+        "-g", str(gop),
+        "-keyint_min", str(gop),
+        "-sc_threshold", "0",           # keep keyframes evenly spaced
+        "-r", str(args.fps),
+    ]
+
+    if args.qmin:
+        # A quality floor, and the reason is a conformance limit rather than
+        # taste. A 6 Mbit constant-rate budget is far more than flat graphics
+        # need, so x264 drops to near-lossless -- q=2.0 measured on a live
+        # dashboard -- and on a photographic slide that produces a keyframe of
+        # one to two megabytes. H.264 level 4.0, which this stream declares,
+        # caps the size of a single coded frame well below that. A hardware
+        # decoder that sizes its buffers from the declared level truncates the
+        # frame, and the picture tears in a band that persists until the next
+        # keyframe, which is oversized in the same way. 98.5% of macroblocks
+        # are skip on a static slide, so nothing repairs it in between.
+        #
+        # Measured symptom: two of six slides tore consistently, both
+        # photographic; the flat ones never did. The stream itself was proven
+        # valid -- a 110MB capture off the wire decoded with zero errors
+        # offline -- so this is the decoder's limit, not corruption.
+        #
+        # 18 is visually lossless for text and graphics at 1080p and shrinks
+        # a photographic keyframe several-fold. --qmin 0 disables the floor.
+        video += ["-qmin", str(args.qmin)]
+
+    if args.no_bframes:
+        # B-frames make the decoder hold and reorder frames. A hardware IP
+        # decoder of this class is built for what the matching hardware
+        # transmitter sends -- low latency, no reordering -- and x264's
+        # defaults are the opposite: measured 12698 B-frames in a ten minute
+        # run, 95% of them in runs of three or more. Worth trying whenever
+        # the picture is unstable and the network is not losing packets.
+        video += ["-bf", "0"]
+
+    if not args.vbr:
+        # Constant rate, and this matters more than it looks.
+        #
+        # A dashboard is a nearly static picture. Left to itself the encoder
+        # spends almost nothing on it -- measured 1.76 Mbit/s against a 10M
+        # cap, with q dropping to 0 -- and then has to burst when a slide
+        # crossfades. A hardware IP decoder with a small input buffer handles
+        # that badly, which is what put artifacts on the television.
+        #
+        # It also explains why the test pattern always looked perfect:
+        # testsrc changes every pixel of every frame, so it sits at the cap
+        # and the transport stream is constant-rate by accident.
+        #
+        # nal-hrd=cbr makes x264 pad the elementary stream to the target, and
+        # -muxrate pads the transport stream with null packets, so the
+        # receiver sees a steady arrival rate whatever the picture is doing.
+        # force-cfr keeps the frame timing constant too, which the HRD model
+        # requires.
+        video_bps = parse_bitrate(args.bitrate)
+        video += ["-minrate", args.bitrate,
+                "-x264-params", "nal-hrd=cbr:force-cfr=1"]
+        # ~15% over the video rate covers TS packetisation and the tables.
+        # Too low and ffmpeg refuses with "muxrate is too low".
+        args.muxrate = str(int(video_bps * 1.15))
+    else:
+        args.muxrate = "0"
+    return video
+
+
+def vaapi_video_args(args: argparse.Namespace, gop: int) -> list[str]:
+    """Hardware encoding on an Intel GPU through VAAPI.
+
+    Why it exists: with x264 on four vCPUs, three 1080p30 channels left too
+    little headroom, and when an announcement video played on two channels
+    at once, ffmpeg dropped nearly every frame for twenty seconds (measured
+    2026-09-29). Measured on an Intel GPU: a quarter of x264's CPU for the
+    same 1080p30 6M stream, Main 4.0, keyframe every 1.5s, constant rate.
+
+    The same stream shape as x264 on purpose -- level 4.0, fixed GOP, no
+    B-frames, a qmin floor, constant rate -- so the receivers see nothing
+    new but the encoder that produced it.
+    """
+    profile = {"baseline": "constrained_baseline"}.get(args.profile, args.profile)
+    video = [
+        # Upload the frame and convert its colours on the GPU as well:
+        # x11grab delivers BGRX, and converting that to NV12 on the CPU
+        # would spend a good part of what the GPU saves. format=bgr0 first
+        # so the test pattern (RGB24) uploads the same way.
+        "-vf", "format=bgr0,hwupload,scale_vaapi=format=nv12",
+        "-c:v", "h264_vaapi",
+        "-profile:v", profile,
+        "-level", "40",
+        "-b:v", args.bitrate,
+        "-maxrate", args.bitrate,
+        "-bufsize", args.bitrate,
+        "-g", str(gop),
+        # Never B-frames, whatever --no-bframes says: the reason they were
+        # turned off for x264 (a decoder built for low-latency streams that
+        # never reorder) holds for any encoder.
+        "-bf", "0",
+        "-r", str(args.fps),
+    ]
+    if args.qmin:
+        # The same keyframe-size floor as for x264; see x264_video_args.
+        video += ["-qmin", str(args.qmin)]
+    if not args.vbr:
+        video += ["-rc_mode", "CBR"]
+        args.muxrate = str(int(parse_bitrate(args.bitrate) * 1.15))
+    else:
+        video += ["-rc_mode", "VBR"]
+        args.muxrate = "0"
+    return video
+
+
 def build_command(args: argparse.Namespace) -> list[str]:
     if getattr(args, "mimic_veo", False):
         # Everything the hardware stream has that ours did not: an MPEG
@@ -324,6 +450,10 @@ def build_command(args: argparse.Namespace) -> list[str]:
         args.profile, args.veo_ids = "baseline", True
 
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", args.loglevel]
+    if getattr(args, "encoder", "x264") == "vaapi":
+        # Global, so before any input: the device the upload filter and the
+        # encoder share.
+        cmd += ["-vaapi_device", args.vaapi_device]
 
     if args.progress_file:
         # To a file rather than the journal, so the web UI can read the
@@ -377,77 +507,10 @@ def build_command(args: argparse.Namespace) -> list[str]:
         cmd += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
 
     gop = max(1, int(round(args.fps * args.gop_seconds)))
-    cmd += [
-        "-c:v", "libx264",
-        "-profile:v", args.profile,
-        "-level", "4.0",
-        "-pix_fmt", "yuv420p",          # 8-bit 4:2:0; anything else is a risk
-        "-preset", "veryfast",
-        "-b:v", args.bitrate,
-        "-maxrate", args.bitrate,
-        "-bufsize", args.bitrate,
-        "-g", str(gop),
-        "-keyint_min", str(gop),
-        "-sc_threshold", "0",           # keep keyframes evenly spaced
-        "-r", str(args.fps),
-    ]
-
-    if args.qmin:
-        # A quality floor, and the reason is a conformance limit rather than
-        # taste. A 6 Mbit constant-rate budget is far more than flat graphics
-        # need, so x264 drops to near-lossless -- q=2.0 measured on a live
-        # dashboard -- and on a photographic slide that produces a keyframe of
-        # one to two megabytes. H.264 level 4.0, which this stream declares,
-        # caps the size of a single coded frame well below that. A hardware
-        # decoder that sizes its buffers from the declared level truncates the
-        # frame, and the picture tears in a band that persists until the next
-        # keyframe, which is oversized in the same way. 98.5% of macroblocks
-        # are skip on a static slide, so nothing repairs it in between.
-        #
-        # Measured symptom: two of six slides tore consistently, both
-        # photographic; the flat ones never did. The stream itself was proven
-        # valid -- a 110MB capture off the wire decoded with zero errors
-        # offline -- so this is the decoder's limit, not corruption.
-        #
-        # 18 is visually lossless for text and graphics at 1080p and shrinks
-        # a photographic keyframe several-fold. --qmin 0 disables the floor.
-        cmd += ["-qmin", str(args.qmin)]
-
-    if args.no_bframes:
-        # B-frames make the decoder hold and reorder frames. A hardware IP
-        # decoder of this class is built for what the matching hardware
-        # transmitter sends -- low latency, no reordering -- and x264's
-        # defaults are the opposite: measured 12698 B-frames in a ten minute
-        # run, 95% of them in runs of three or more. Worth trying whenever
-        # the picture is unstable and the network is not losing packets.
-        cmd += ["-bf", "0"]
-
-    if not args.vbr:
-        # Constant rate, and this matters more than it looks.
-        #
-        # A dashboard is a nearly static picture. Left to itself the encoder
-        # spends almost nothing on it -- measured 1.76 Mbit/s against a 10M
-        # cap, with q dropping to 0 -- and then has to burst when a slide
-        # crossfades. A hardware IP decoder with a small input buffer handles
-        # that badly, which is what put artifacts on the television.
-        #
-        # It also explains why the test pattern always looked perfect:
-        # testsrc changes every pixel of every frame, so it sits at the cap
-        # and the transport stream is constant-rate by accident.
-        #
-        # nal-hrd=cbr makes x264 pad the elementary stream to the target, and
-        # -muxrate pads the transport stream with null packets, so the
-        # receiver sees a steady arrival rate whatever the picture is doing.
-        # force-cfr keeps the frame timing constant too, which the HRD model
-        # requires.
-        video_bps = parse_bitrate(args.bitrate)
-        cmd += ["-minrate", args.bitrate,
-                "-x264-params", "nal-hrd=cbr:force-cfr=1"]
-        # ~15% over the video rate covers TS packetisation and the tables.
-        # Too low and ffmpeg refuses with "muxrate is too low".
-        args.muxrate = str(int(video_bps * 1.15))
+    if getattr(args, "encoder", "x264") == "vaapi":
+        cmd += vaapi_video_args(args, gop)
     else:
-        args.muxrate = "0"
+        cmd += x264_video_args(args, gop)
 
     if args.audio and getattr(args, "audio_codec", "aac") == "mp3":
         # 24 kHz: ffmpeg labels MPEG audio below 32 kHz as stream type 0x04
@@ -586,6 +649,11 @@ def build_parser() -> argparse.ArgumentParser:
                              "to back at line rate, and a receiver with a "
                              "small input buffer drops the tail of a large "
                              "frame's burst")
+    parser.add_argument("--encoder", choices=["x264", "vaapi"], default="x264",
+                        help="x264 encodes on the CPU; vaapi on an Intel GPU "
+                             "(needs /dev/dri and the intel-media VA driver)")
+    parser.add_argument("--vaapi-device", default="/dev/dri/renderD128",
+                        metavar="PATH", help="render node for --encoder vaapi")
     parser.add_argument("--no-bframes", action="store_true",
                         help="encode without B-frames. Removes decoder-side "
                              "frame reordering, which is what the hardware "
@@ -703,9 +771,17 @@ def main(argv: list[str] | None = None) -> int:
               "    apt-get update && apt-get install -y ffmpeg", file=sys.stderr)
         return 1
 
+    if args.encoder == "vaapi" and not os.path.exists(args.vaapi_device):
+        # Otherwise ffmpeg's "Failed to initialise VAAPI connection" turns up
+        # buried in the journal after the browser has already been started.
+        print(f"✗ --encoder vaapi, but {args.vaapi_device} does not exist.\n"
+              "  This host has no GPU render node (or not that one). Check\n"
+              "  ls -l /dev/dri, or use --encoder x264.", file=sys.stderr)
+        return 1
+
     gop = max(1, int(round(args.fps * args.gop_seconds)))
     print(f"→ sending to {args.group}:{args.port}  ({args.variant}, "
-          f"{args.profile} profile, {args.bitrate})")
+          f"{args.profile} profile, {args.bitrate}, {args.encoder})")
     print(f"  capture {args.capture_fps:g} fps -> output {args.fps} fps, "
           f"keyframe every {gop} frames (~{args.gop_seconds:g}s)")
     print(f"  audio: {'silent track included' if args.audio else 'none'}")

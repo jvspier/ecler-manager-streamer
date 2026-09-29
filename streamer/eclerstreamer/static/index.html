@@ -331,6 +331,14 @@ function card(dash) {
           only for a still one — it caps how smooth motion can be.</div></div>
       <div><label for="fps-${dash.channel}">Output fps</label>
         <input id="fps-${dash.channel}" value="${esc(draftOr("fps-" + dash.channel, dash.fps))}"></div>
+      <div style="grid-column:1/-1"><label for="enc-${dash.channel}">Encoder</label>
+        <select id="enc-${dash.channel}">
+          ${[["x264", "Processor (x264)"], ["vaapi", "Graphics chip (VAAPI)"]].map(([v, label]) =>
+            `<option value="${v}"${draftOr("enc-" + dash.channel, dash.encoder || "x264") === v ? " selected" : ""}>${label}</option>`).join("")}
+        </select>
+        <div class="hint">The graphics chip uses a fraction of the processor
+          time. Takes effect on the next restart; switch back here if a TV
+          shows trouble.</div></div>
       <div style="grid-column:1/-1">
         <label for="note-${dash.channel}">Note</label>
         <input id="note-${dash.channel}" placeholder="Why this channel is set up the way it is"
@@ -476,11 +484,12 @@ document.addEventListener("click", async (event) => {
         bitrate: document.getElementById(`bitrate-${channel}`).value.trim(),
         capture_fps: Number(document.getElementById(`capture-${channel}`).value),
         fps: Number(document.getElementById(`fps-${channel}`).value),
+        encoder: document.getElementById(`enc-${channel}`).value,
         note: document.getElementById(`note-${channel}`).value,
       });
       clearDrafts(`name-${channel}`); clearDrafts(`bitrate-${channel}`);
       clearDrafts(`capture-${channel}`); clearDrafts(`fps-${channel}`);
-      clearDrafts(`note-${channel}`);
+      clearDrafts(`note-${channel}`); clearDrafts(`enc-${channel}`);
       toast(`Channel ${channel}: settings saved. Restart to apply.`, "ok");
     } else if (action === "enable") {
       // One word, one meaning: on in the config, running now, and running

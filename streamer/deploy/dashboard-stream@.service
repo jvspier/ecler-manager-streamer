@@ -52,7 +52,13 @@ StandardError=journal
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
-PrivateDevices=true
+# Instead of PrivateDevices=true, which hides /dev/dri: the same closed
+# device policy (only /dev/null, /dev/zero, /dev/urandom and the like), plus
+# GPU render nodes for the "vaapi" encoder. The render group grants access
+# to them; the video group is not needed for encoding.
+DevicePolicy=closed
+DeviceAllow=char-drm rw
+SupplementaryGroups=render
 
 [Install]
 WantedBy=multi-user.target

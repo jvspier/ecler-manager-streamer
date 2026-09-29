@@ -180,3 +180,41 @@ class TestMimicVeo(unittest.TestCase):
         self.assertNotIn("-mpegts_service_id", cmd)
         self.assertIn("-an", cmd)
         self.assertEqual(self._after(cmd, "-profile:v"), "main")
+
+
+class TestVaapiEncoder(unittest.TestCase):
+    """The GPU path: same stream shape as x264, different engine."""
+
+    _build = staticmethod(TestStreamPacing._build)
+
+    def _after(self, cmd, flag):
+        return cmd[cmd.index(flag) + 1]
+
+    def test_encodes_on_the_gpu_with_the_same_stream_shape(self):
+        cmd = self._build(["--group", "239.255.42.51", "--encoder", "vaapi",
+                           "--from-display", ":106", "--capture-fps", "30"])
+        self.assertEqual(self._after(cmd, "-c:v"), "h264_vaapi")
+        self.assertEqual(self._after(cmd, "-rc_mode"), "CBR")
+        self.assertEqual(self._after(cmd, "-bf"), "0")
+        self.assertEqual(self._after(cmd, "-level"), "40")
+        self.assertEqual(self._after(cmd, "-qmin"), "18")
+        self.assertIn("-muxrate", cmd)
+        # colours converted on the GPU, not the CPU
+        self.assertIn("scale_vaapi=format=nv12", self._after(cmd, "-vf"))
+        # the device is a global option, so it precedes every input
+        self.assertLess(cmd.index("-vaapi_device"), cmd.index("-i"))
+
+    def test_no_x264_options_reach_the_gpu_encoder(self):
+        cmd = self._build(["--group", "239.255.42.51", "--encoder", "vaapi"])
+        for x264_only in ("-preset", "-x264-params", "-pix_fmt"):
+            self.assertNotIn(x264_only, cmd)
+
+    def test_baseline_maps_to_constrained_baseline(self):
+        cmd = self._build(["--group", "239.255.42.51", "--encoder", "vaapi",
+                           "--profile", "baseline"])
+        self.assertEqual(self._after(cmd, "-profile:v"), "constrained_baseline")
+
+    def test_x264_remains_the_default(self):
+        cmd = self._build(["--group", "239.255.42.51"])
+        self.assertEqual(self._after(cmd, "-c:v"), "libx264")
+        self.assertNotIn("-vaapi_device", cmd)

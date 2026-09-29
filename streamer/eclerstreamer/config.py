@@ -17,6 +17,7 @@ DEFAULT_PATH = Path("/etc/eclerstreamer/config.json")
 # X display numbers are arbitrary integers; deriving one from the channel
 # keeps them unique without having to store an allocation anywhere.
 DISPLAY_BASE = 100
+ENCODERS = ("x264", "vaapi")
 
 
 # Confirmed against the switch's IGMP tables for channels 1 and 2, and the
@@ -44,6 +45,9 @@ class Dashboard:
     # a broken tool rather than as a setting to tune. Correct by default,
     # optimised deliberately.
     capture_fps: float = 30.0
+    #: "x264" encodes on the CPU; "vaapi" on an Intel GPU. Per channel, so
+    #: channels move to the GPU one at a time and back just as easily.
+    encoder: str = "x264"
     fps: int = 30
     bitrate: str = "6M"
     size: str = "1920x1080"
@@ -63,6 +67,7 @@ class Dashboard:
             "enabled": self.enabled, "display": self.display,
             "capture_fps": self.capture_fps, "fps": self.fps,
             "bitrate": self.bitrate, "size": self.size, "note": self.note,
+            "encoder": self.encoder,
         }
 
 
@@ -160,6 +165,11 @@ def parse(data: dict, path: Path = DEFAULT_PATH) -> Config:
                 setattr(dash, key, cast(entry[key]))
         if entry.get("display") is not None:
             dash.display = int(entry["display"])
+        if entry.get("encoder") is not None:
+            if entry["encoder"] not in ENCODERS:
+                raise ValueError(f"channel {channel}: encoder must be one of "
+                                 f"{', '.join(ENCODERS)}")
+            dash.encoder = entry["encoder"]
         cfg.dashboards.append(dash)
     cfg.dashboards.sort(key=lambda d: d.channel)
     return cfg

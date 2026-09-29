@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         "--fps", str(dash.fps),
         "--bitrate", dash.bitrate,
         "--qmin", str(cfg.qmin),
+        "--encoder", dash.encoder,
     ]
     if progress is not None:
         command += ["--progress-file", str(progress)]

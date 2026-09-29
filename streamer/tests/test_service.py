@@ -150,10 +150,41 @@ class TestUnitFiles(unittest.TestCase):
                 self.assertIn("PAGESOURCE_RUNTIME_DIR=/var/lib/eclerstreamer/run",
                               unit)
 
+    def test_streams_may_use_the_gpu_and_nothing_else(self):
+        """PrivateDevices=true hid /dev/dri from the vaapi encoder. What
+        replaces it keeps the same closed policy and adds only DRM nodes."""
+        unit = self._unit("dashboard-stream@.service")
+        body = "\n".join(line for line in unit.splitlines()
+                          if not line.lstrip().startswith("#"))
+        self.assertNotIn("PrivateDevices=true", body)
+        self.assertIn("DevicePolicy=closed", body)
+        self.assertIn("DeviceAllow=char-drm rw", body)
+        self.assertIn("SupplementaryGroups=render", body)
+
     def test_misconfiguration_does_not_restart_for_ever(self):
         """stream.py exits 2 for what a restart cannot fix."""
         self.assertIn("RestartPreventExitStatus=2",
                       self._unit("dashboard-stream@.service"))
+
+
+class TestEncoderConfig(unittest.TestCase):
+    def test_round_trip_and_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            path.write_text(json.dumps({"dashboards": [
+                {"channel": 5}, {"channel": 6, "encoder": "vaapi"}]}))
+            cfg = config_mod.load(path)
+            self.assertEqual(cfg.dashboard(5).encoder, "x264")
+            self.assertEqual(cfg.dashboard(6).encoder, "vaapi")
+            self.assertEqual(cfg.dashboard(6).to_dict()["encoder"], "vaapi")
+
+    def test_unknown_encoder_is_refused_at_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            path.write_text(json.dumps({"dashboards": [
+                {"channel": 6, "encoder": "nvenc"}]}))
+            with self.assertRaises(ValueError):
+                config_mod.load(path)
 
 
 class TestBrowserFlags(unittest.TestCase):
@@ -393,6 +424,13 @@ class TestHttp(unittest.TestCase):
         """Somewhere to keep URLs that are not on a channel right now."""
         self._post("/api/config", {"notes": "spare: https://example.com/x"})
         self.assertIn("example.com/x", config_mod.load(self.path).notes)
+
+    def test_encoder_is_a_per_channel_setting(self):
+        self._post("/api/dashboards/5", {"encoder": "vaapi"})
+        self.assertEqual(config_mod.load(self.path).dashboard(5).encoder, "vaapi")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self._post("/api/dashboards/5", {"encoder": "nvenc"})
+        self.assertEqual(caught.exception.code, 400)
 
     def test_a_dashboard_note_persists(self):
         self._post("/api/dashboards/5", {"note": "fed by the old ChromeBox"})
