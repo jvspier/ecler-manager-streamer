@@ -15,9 +15,9 @@ control protocol, so none of that is necessary.
 **How proven is this?** The manager has run continuously against 30 receivers
 since early September 2026 and has done every switch, rename and
 commissioning job on that fleet. The streamer is newer: built mid-September,
-it currently drives three channels on one machine, has survived reboots
-unattended, and has not yet replaced the hardware transmitters in daily
-service. Both carry tests that run without any hardware.
+it has since replaced one of the four hardware transmitters in daily service,
+drives three channels from one small machine on its integrated GPU, and has
+survived reboots unattended. Both carry tests that run without any hardware.
 
 Pure Python standard library, **3.8 or newer** — the full test suites are run
 against 3.8, 3.9 and 3.14. No `pip install`, no build step, no dependencies. The streamer additionally needs `ffmpeg`, `Xvfb` and `chromium`,
@@ -87,6 +87,10 @@ invented.)*
   factory-default unit: name, channel, address, reboot, and adopt once it
   answers at its new address.
 - **Backup and restore** the whole configuration, and an optional login.
+- **Understands software streams.** A channel can be marked as not reporting
+  video lock, which a VEO cannot do meaningfully for a stream it did not get
+  from a hardware transmitter. Its TVs then show the streamer's own verdict
+  (running, slow, stalled, down) instead, with outages and restarts logged.
 
 ### The streamer
 
@@ -100,6 +104,10 @@ invented.)*
 - **systemd owns the streams**; the web UI only starts, stops and restarts
   them. It can crash or be upgraded without interrupting a frame, and a
   stream comes back by itself after a reboot.
+- **Encodes on an Intel GPU** where there is one (VAAPI), per channel, at a
+  fraction of the CPU, with **CPU, RAM and GPU** load shown on its page.
+- **Takes over a transmitter's channel** without touching a single TV:
+  stream on the channel number the transmitter used, after switching it off.
 
 See [streamer/README.md](streamer/README.md) to run it.
 
@@ -203,6 +211,8 @@ The emulator reproduces the real wire format, including the awkward parts, and
 | [docs/docker.md](docs/docker.md) | Running the manager as a container, and why the streamer is not one |
 | [streamer/README.md](streamer/README.md) | The streamer: rendering dashboards headlessly and streaming them to receivers, so no PC is attached to a transmitter |
 | [streamer/docs/streaming.md](streamer/docs/streaming.md) | How the streaming was proven, and the five failure modes a test pattern hides |
+| [streamer/docs/gpu.md](streamer/docs/gpu.md) | Encoding on an Intel GPU: passing it through, the driver, and a week of measurements against x264 |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each version |
 
 ## The protocol, in brief
 
@@ -245,7 +255,7 @@ tests/
 
 streamer/run.py               streamer web service
 streamer/stream.py            what systemd runs, one instance per channel
-streamer/eclerstreamer/       config, systemd control, API, UI
+streamer/eclerstreamer/       config, systemd control, API, UI, load sampling
 streamer/tools/teststream.py  builds and runs the ffmpeg pipeline
 streamer/tools/pagesource.sh  puts a page on a virtual display
 streamer/deploy/              units, sudo rule, installer

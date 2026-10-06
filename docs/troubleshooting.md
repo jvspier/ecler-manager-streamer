@@ -73,6 +73,16 @@ off or a dashboard PC is asleep. Re-acquiring then is harmless — it just repor
 `still no signal - check the transmitter`, which is a useful distinction in
 itself.
 
+*And on a channel the streamer serves, `no signal` means nothing at all.* A
+VEO's lock flag is only set by a hardware transmitter; on a software stream
+it keeps whatever the previous channel left it with, in either direction. A
+TV moved there from a channel that had lost its source shows `no signal`
+while its picture is perfect, and no re-acquire changes that. Untick **lock**
+for that channel under **Channels…**; its TVs then show the streamer's own
+verdict instead. This was settled from the event log after an afternoon of
+wrong theories, which is the lesson: read
+`/var/lib/eclermanager/events.jsonl` before guessing.
+
 *Footnote on the network:* these are multicast streams and Ecler's spec sheet
 requires *"IGMP and Jumbo Frames compliance"*. If dropouts ever begin happening
 **without** a power event, that is when to ask whether the VEO VLAN has an IGMP
@@ -304,11 +314,15 @@ cannot see. The observed mapping, with `239.255.42.42` as the manual's default:
 | 2 Office | `239.255.42.44` | **confirmed** — `switch-a` ports 1/1/33-35 are known Office receivers |
 | 3 Canteen | `239.255.42.45` | inferred from the pattern |
 | 4 Warehouse | `239.255.42.46` | inferred from the pattern |
+| 5, 6, 7 | `.47`, `.48`, `.49` | **confirmed** later — receivers on those channels show the streamer's streams sent there |
+| **9** | **`239.255.42.57`** | **observed** (2026-09-23) — a receiver set to 9 joined `.57`, *not* the `.51` the pattern gives |
 
-So `group = 239.255.42.(42 + channel)`, confirmed on two channels from two
-switches by cross-checking against receivers the manager already knew. The
-remaining two follow the pattern; `tools/probe.py <transmitter-ip>` reads the
-group off a transmitter's own web page if you want them confirmed too.
+So `group = 239.255.42.(42 + channel)` holds for **1 to 7**, and **not above**:
+channel 9 broke it. Where the real mapping goes from 8 up is unknown, which is
+why the streamer only accepts channels 1-7. To find the address for any
+channel, put one receiver on it and read the group its port joins off the
+switch, as above. `tools/probe.py <transmitter-ip>` reads a transmitter's group
+off its own web page.
 
 **This is how the office screen count was finally resolved.** Two receivers were
 present in switch MAC tables but absent from the manager, and their ports were

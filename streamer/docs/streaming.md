@@ -418,9 +418,10 @@ Both address the stream by `--port`, so neither needs the channel repeating.
 If a foreground one is already stuck, `pkill -f teststream.py`.
 
 `--channel N` resolves the address itself — from the config if recorded, else
-from the pattern confirmed on this network, `239.255.42.(42+N)`. It **refuses a
-channel a real transmitter serves**, so a test cannot collide with a live
-dashboard. Add `--dry-run` to see the ffmpeg command without sending anything.
+from the pattern confirmed on this network, `239.255.42.(42+N)`, which only
+holds for channels 1-7 (channel 9 is `.57`, not `.51`; above 7 it refuses
+rather than guess, so pass `--group`). It **refuses a channel a real
+transmitter serves**, so a test cannot collide with a live dashboard. Add `--dry-run` to see the ffmpeg command without sending anything.
 
 **Step 2 — point one TV at it.** Use the dashboard: switch any TV to channel 5
 and look at the screen. Allow a few seconds, since a receiver can only begin

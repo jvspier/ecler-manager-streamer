@@ -3,11 +3,12 @@
 Renders web dashboards headlessly and streams them as H.264 over multicast, so
 a VEO receiver shows them without a PC attached to a transmitter.
 
-**Maturity.** Newer than the manager and less exercised: it drives three
-channels on one machine, survives reboots unattended, and its 47 tests run
-without hardware — but it has not yet replaced the hardware transmitters in
-daily service. The encoder settings below are the ones proven on real
-receivers; the rest is ordinary software.
+**Maturity.** Newer than the manager, and now in daily service: it has
+replaced one of the site's four hardware transmitters outright (every TV on
+that channel watches the stream), and drives three channels from one small
+machine, encoding on its integrated GPU. It survives reboots unattended, and
+its tests run without hardware. The encoder settings below are the ones proven
+on real receivers; the rest is ordinary software.
 
 It is a **separate service** from the Ecler Manager, deliberately. The manager
 is operational — you open it when a TV drops off. The streamer is
@@ -77,13 +78,66 @@ python3 tools/setpassword.py --env /etc/eclerstreamer/eclerstreamer.env --user a
 
 ## Running a dashboard
 
-1. **Add dashboard** in the web UI, give it a channel number.
+1. **Add dashboard** in the web UI, give it a channel number from **1 to 7**
+   (see [Channel numbers](#channel-numbers) for why not higher).
 2. Paste the URL, **Save**.
-3. **Enable**, then `systemctl enable --now dashboard-stream@<channel>` so it
-   comes back after a reboot.
+3. **Enable**. That one button turns it on in the config, starts it, and
+   enables its unit so it comes back after a reboot.
+4. If the host has an Intel GPU passed through, set **Encoder** to
+   *Graphics chip* under **settings** and restart the channel.
 
 The card then shows a live screenshot of what that channel is actually
 displaying, which is the one thing a status line cannot tell you.
+
+## Replacing a hardware transmitter
+
+The simplest migration keeps the channel number. Stream the dashboard **on the
+channel the transmitter used**, and nothing else changes: the TVs stay where
+they are, and anything that switches them (an AV controller's presentation
+mode, a schedule) keeps sending them to the same number. Receivers do not care
+what sends a stream, only which channel they are on.
+
+**Never two senders on one channel.** Switch the transmitter off, or move it
+to another channel, *before* the streamer starts sending there. Two streams on
+one multicast group interleave, and every screen on that channel shows
+garbage. Unplugging only the PC behind the transmitter is not enough: the
+transmitter goes on sending a black picture.
+
+Then, in the manager's **Channels…**, untick **lock** for that channel (see
+below), and set its source to the streamer.
+
+## Channel numbers
+
+A channel (Group ID) N is multicast group `239.255.42.(42+N)` — but that is
+only proven for **1 to 7**: 1 and 2 from the switches' IGMP tables, 5, 6 and 7
+by receivers showing streams. A receiver on channel 9 joined `239.255.42.57`,
+not the `.51` the formula gives. Above 7 the mapping is unknown, and a stream
+sent to a guessed address reaches no TV and reports no error. So the streamer
+accepts channels 1-7 only, and `tools/teststream.py --channel` refuses to
+guess above 7 (pass `--group` with an address read off the switch).
+
+## Monitoring
+
+**From the manager.** A VEO's video-lock flag means nothing on a software
+stream: it keeps whatever the previous channel left it with. So in the
+manager, untick **lock** for the streamer's channels and enter the streamer's
+address at the top of **Channels…**. Each TV on those channels then shows the
+stream's real state, read from the streamer's public `/api/streams`: *ok*,
+*slow* (encoding below real time), *stalled* (the process runs but ffmpeg has
+stopped producing), *down* or *off*. Changes are logged in the manager's
+events, including a restart that fell between two checks.
+
+`/api/streams` needs no login, by design: it is what the manager reads. It
+carries channel numbers, a verdict and encoder figures (fps, speed, dropped
+frames, start time), and no URLs, names or settings. It is cached for 5
+seconds, so polling it cannot pile up work.
+
+**On the streamer page.** Each card shows the encoder's own figures: fps,
+speed, and frames dropped since the stream started. The header has **CPU**,
+**RAM** and **GPU** bars, and each GPU channel a `gpu %` chip. Frames dropped
+one at a time, roughly hourly, are clock drift and harmless; hundreds at once
+mean the machine fell behind. `docs/gpu.md` shows how to read exactly when
+from the progress file.
 
 ## Sessions and scheduled restarts
 
@@ -107,16 +161,25 @@ channels. Watch `free -m` for a few weeks and decide rather than guessing.
 
 ## Sizing
 
-Measured, one 1080p30 stream of a heavy page (slideshow, photos, animation):
+Measured, one 1080p30 stream of a heavy page (slideshow, photos, animation),
+encoded on the CPU with x264:
 
 | | |
 |---|---|
 | CPU | 0.61 cores on an i3-8100T (3.1GHz) |
 | Memory | ~700 MB over a ~250 MB base |
 
+**With an Intel integrated GPU, encode there.** Three 1080p30 channels on an
+i5-7400T (4 vCPU, 8 GB) used about 70% of the CPU on x264, and when a page
+played a video on two channels at once the encoder fell behind and dropped
+nearly every frame for twenty seconds. On the GPU (HD Graphics 630) the same
+three channels use about 20% of the CPU and half the GPU at a low clock, and a
+week side by side showed 3641 frames dropped in bursts on x264 against none on
+the GPU. Each dashboard has an **Encoder** setting; see
+[docs/gpu.md](docs/gpu.md) for passing the GPU through and the measurements.
+
 A static dashboard of bars and text costs noticeably less, and can run at
 `capture_fps` 10 — sampling a still page 30 times a second is pure waste.
-Four streams fit comfortably in 6 vCPU and 8 GB.
 
 ## The settings that matter, and why
 
@@ -130,6 +193,8 @@ These were expensive to find. `docs/streaming.md` has the full account.
 | `bitrate=`/`burst_bits=` on the socket | `-muxrate` paces the stream's timestamps, not the bytes; a whole frame written at line rate overruns a small receiver buffer |
 | `-draw_mouse 0` | Xvfb `-nocursor` does not work — the browser sets its own cursor on its own window |
 | browser anti-throttling flags | Chromium backgrounds a renderer it thinks nobody is watching, and under a bare Xvfb nothing tells it otherwise. It sat at 0% CPU while a slideshow was supposedly animating |
+| `--autoplay-policy=no-user-gesture-required` | Chromium will not autoplay a video with sound until someone clicks the page, and nobody clicks a wall. A page that showed an announcement video froze on its first frame until the channel was restarted |
+| hardware encoding (VAAPI), where there is a GPU | the same stream shape as x264 — level 4.0, fixed GOP, no B-frames, `qmin`, constant rate — at a fraction of the CPU, so a page that plays video no longer starves the encoder |
 
 **A test pattern hides every one of these.** `testsrc` changes every pixel of
 every frame, so it sits at the bitrate cap, is constant-rate by accident, has
