@@ -6,6 +6,30 @@ fell behind and ffmpeg dropped nearly every frame for about twenty seconds.
 Encoding on an Intel integrated GPU used a quarter of x264's CPU for the same
 1080p30 6M stream, measured on the same input.
 
+**Measured in production, a week side by side** (two channels showing the
+same site, with the same announcement videos):
+
+| Encoder | Bursts of dropped frames | Frames dropped in bursts |
+|---|---|---|
+| x264 | 16 windows, about 10 occasions | 3641 |
+| VAAPI | 0 | 0 |
+
+Both also dropped one frame roughly every 56 minutes. That is drift between
+the capture clock and the output clock, about 10 ppm, and invisible on screen.
+The bursts come from `/run/eclerstreamer/progress-<channel>.txt`, which keeps
+the encoder's counters since the stream started:
+
+```bash
+awk -F= '/^out_time=/{split($2,a,"."); t=a[1]}
+  /^drop_frames=/{d=$2-p; p=$2; if (d==1) s++; else if (d>1) {b++; bf+=d; print "  +" t, "dropped", d}}
+  END {printf "  hourly drift: %d   burst windows: %d   frames in bursts: %d\n", s, b, bf}' \
+  /run/eclerstreamer/progress-6.txt
+```
+
+Each line is a 10-second window, timed from the stream's start
+(`systemctl show -p ExecMainStartTimestamp dashboard-stream@6`). A restart
+starts a new file, so read it first.
+
 Each channel has an **Encoder** setting on the streamer page: *Processor
 (x264)* or *Graphics chip (VAAPI)*. It takes effect when that channel
 restarts. Move channels over one at a time, and switch one back if its TV
