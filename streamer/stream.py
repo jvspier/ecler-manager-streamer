@@ -51,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     if not dash.url:
         log.error("channel %s has no URL set", args.channel)
         return 2
+    if dash.channel not in config_mod.VERIFIED_CHANNELS:
+        log.error(config_mod.UNVERIFIED_CHANNEL.format(channel=dash.channel))
+        return 2
     # Disabled means the unit should not have been started. Failing loudly is
     # better than exiting cleanly, which systemd would read as "job done".
     if not dash.enabled:

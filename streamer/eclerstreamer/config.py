@@ -20,10 +20,19 @@ DISPLAY_BASE = 100
 ENCODERS = ("x264", "vaapi")
 
 
-# Confirmed against the switch's IGMP tables for channels 1 and 2, and the
-# pattern holds for the rest. Derived here rather than read from the manager
-# so a stream can start with the manager unreachable.
+# Group ID N is 239.255.42.(42+N) -- but only for 1-7. Channels 1 and 2 were
+# confirmed against the switches' IGMP tables and 5, 6 and 7 by receivers
+# showing our streams; channel 9, though, joined 239.255.42.57, not .51 (seen
+# 2026-09-23). Above 7 the formula is unknown, and a stream sent to a guessed
+# address simply never reaches a TV, with no error anywhere. So only the
+# proven channels are accepted. Derived here rather than read from the
+# manager so a stream can start with the manager unreachable.
 MULTICAST_BASE = 42
+VERIFIED_CHANNELS = range(1, 8)
+UNVERIFIED_CHANNEL = (
+    "channel {channel} is outside 1-7, the channels whose multicast address is "
+    "known (239.255.42.(42+N)). Above 7 the receivers use something else -- "
+    "channel 9 joins 239.255.42.57, not .51 -- so a stream there would reach no TV")
 
 
 def multicast_for(channel: int) -> str:

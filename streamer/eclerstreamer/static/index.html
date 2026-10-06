@@ -610,11 +610,13 @@ function fillHost() {
 
 document.getElementById("refresh").addEventListener("click", load);
 document.getElementById("add").addEventListener("click", async () => {
-  const raw = prompt("Channel number for the new dashboard (0-63):");
+  // 1-7 only: those are the channels whose multicast address is known.
+  // Above 7 the receivers use another one (channel 9 is .57, not .51).
+  const raw = prompt("Channel number for the new dashboard (1-7):");
   if (raw === null) return;
   const channel = Number(raw.trim());
-  if (!Number.isInteger(channel) || channel < 0 || channel > 63) {
-    return toast("Channel must be a whole number from 0 to 63", "bad");
+  if (!Number.isInteger(channel) || channel < 1 || channel > 7) {
+    return toast("Channel must be 1 to 7: above 7 the stream's address is not known", "bad");
   }
   try {
     await api("/api/dashboards", {

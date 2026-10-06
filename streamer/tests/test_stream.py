@@ -218,3 +218,44 @@ class TestVaapiEncoder(unittest.TestCase):
         cmd = self._build(["--group", "239.255.42.51"])
         self.assertEqual(self._after(cmd, "-c:v"), "libx264")
         self.assertNotIn("-vaapi_device", cmd)
+
+
+class TestUnknownAddresses(unittest.TestCase):
+    """Above 7 the address is not 239.255.42.(42+N): refuse, never guess."""
+
+    def setUp(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        import teststream
+        self.teststream = teststream
+
+    def test_teststream_refuses_to_derive_above_7(self):
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            got = self.teststream.group_for_channel(9, "/nonexistent/config.json")
+        self.assertIsNone(got)
+        self.assertIn("239.255.42.57", err.getvalue())
+
+    def test_teststream_still_derives_1_to_7(self):
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(
+                self.teststream.group_for_channel(6, "/nonexistent/config.json"),
+                "239.255.42.48")
+
+    def test_stream_service_will_not_start_above_7(self):
+        """Exit 2: the unit stops instead of restarting for ever."""
+        import json
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.json"
+            path.write_text(json.dumps({"dashboards": [
+                {"channel": 9, "url": "https://x/", "enabled": True}]}))
+            done = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve().parent.parent / "stream.py"),
+                 "--channel", "9", "--config", str(path), "--dry-run"],
+                capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("outside 1-7", done.stderr)

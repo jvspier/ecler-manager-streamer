@@ -26,7 +26,8 @@ page yourself and want to reuse it.
 
 **Addresses.** ``--channel N`` looks the address up in the config, or derives
 it from the pattern confirmed on this network, ``239.255.42.(42+N)`` -- channel
-1 is `.43`, channel 2 is `.44`.  It refuses a channel that a real transmitter
+1 is `.43`, channel 2 is `.44`. That pattern only holds for 1-7: channel 9 is
+`.57`, so above 7 it refuses rather than guess.  It refuses a channel that a real transmitter
 serves, so a test cannot collide with a live dashboard.  ``--group`` takes an
 address directly if you would rather be explicit.
 
@@ -107,8 +108,18 @@ def group_for_channel(channel: int, config_path: str | None) -> str | None:
     if channel in in_use:
         print(f"✗ channel {channel} is {in_use[channel]!r}, served by a real "
               "transmitter.\n  Streaming to it would collide with a live "
-              "dashboard. Pick an unused channel\n  (5 and above are free "
-              "here).", file=sys.stderr)
+              "dashboard. Pick a channel no transmitter uses.", file=sys.stderr)
+        return None
+
+    if channel not in recorded and not 1 <= channel <= 7:
+        # The pattern below is proven for 1-7 only: channel 9 joins
+        # 239.255.42.57, not .51. Guessing would send to an address no
+        # receiver listens on, and nothing would say so.
+        print(f"✗ the address for channel {channel} is not known: 239.255.42.(42+N)\n"
+              "  holds for 1-7, but channel 9 is 239.255.42.57. Read the group a\n"
+              "  receiver on that channel joins off the switch's IGMP table\n"
+              "  (show ip multicast vlan <id>) and pass it with --group.",
+              file=sys.stderr)
         return None
 
     address = recorded.get(channel) or f"{GROUP_BASE}{GROUP_OFFSET + channel}"

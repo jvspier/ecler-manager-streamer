@@ -408,6 +408,17 @@ class TestHttp(unittest.TestCase):
         self._post("/api/dashboards", {"channel": 7, "url": "https://y/"})
         self.assertFalse(config_mod.load(self.path).dashboard(7).enabled)
 
+    def test_only_channels_with_a_known_address_can_be_added(self):
+        """Channel 9 joins 239.255.42.57, not the .51 the pattern gives, so a
+        dashboard above 7 would stream to an address no receiver listens on."""
+        for channel in (0, 8, 9, 63):
+            with self.subTest(channel=channel):
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    self._post("/api/dashboards", {"channel": channel})
+                self.assertEqual(caught.exception.code, 400)
+        self._post("/api/dashboards", {"channel": 7})
+        self.assertIsNotNone(config_mod.load(self.path).dashboard(7))
+
     def test_duplicate_channel_is_refused(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self._post("/api/dashboards", {"channel": 5})

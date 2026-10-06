@@ -457,8 +457,9 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.BAD_REQUEST, "channel must be a number") from None
         with self.lock:
             cfg = self._load()
-            if not 0 <= channel <= 63:
-                raise ApiError(HTTPStatus.BAD_REQUEST, "channel must be 0-63")
+            if channel not in config_mod.VERIFIED_CHANNELS:
+                raise ApiError(HTTPStatus.BAD_REQUEST,
+                               config_mod.UNVERIFIED_CHANNEL.format(channel=channel))
             if cfg.dashboard(channel) is not None:
                 raise ApiError(HTTPStatus.CONFLICT,
                                f"channel {channel} already has a dashboard")
