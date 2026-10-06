@@ -42,6 +42,20 @@
              font-size: 11.5px; font-family: var(--mono); }
   .spacer { flex: 1 1 auto; }
 
+  /* Host load: three small bars in the header. */
+  .meters { display: flex; gap: 16px; align-items: center; margin-left: 8px;
+            flex-wrap: wrap; }
+  .meter { display: flex; align-items: center; gap: 7px; font-size: 11.5px;
+           color: var(--muted); cursor: default; }
+  .meter b { font-weight: 600; color: var(--muted); }
+  .meter .bar { width: 72px; height: 6px; border-radius: var(--r-pill);
+                background: var(--raised); overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; background: var(--accent);
+                  border-radius: var(--r-pill); transition: width .4s; }
+  .meter.warn .bar i { background: var(--warn); }
+  .meter.bad .bar i { background: var(--bad); }
+  .meter .val { font-family: var(--mono); color: var(--text); min-width: 7ch; }
+
   button { font: inherit; font-size: 12.5px; color: var(--muted);
            background: var(--surface); border: none; border-radius: var(--r-md);
            padding: 8px 14px; cursor: pointer;
@@ -133,6 +147,7 @@
 <body>
 <header class="top">
   <h1>Ecler Streamer<small id="clock"></small></h1>
+  <div class="meters" id="meters"></div>
   <div class="spacer"></div>
   <a id="manager-link" hidden target="_blank" rel="noopener"
      title="Open the Ecler Manager in a new tab">Manager</a>
@@ -274,11 +289,62 @@ function statusChips(dash) {
   if (dropped > 0) {
     chips.push(`<span class="chip bad">${dropped} dropped</span>`);
   }
+  if (s.active === "active" && dash.gpu) {
+    // This channel's share of the GPU, so the busy one stands out.
+    chips.push(`<span class="chip" title="${esc(`video engine ${dash.gpu.video || 0}% · render engine ${dash.gpu.render || 0}%`)}">gpu ${Math.round(gpuBusy(dash.gpu))}%</span>`);
+  }
   if (s.restarts) chips.push(`<span class="chip warn">${s.restarts} restarts</span>`);
   if (dash.enabled && !s.at_boot) {
     chips.push('<span class="chip warn">not after a reboot</span>');
   }
   return chips.join("");
+}
+
+// --- host load ---------------------------------------------------------
+// From the server's sampler, refreshed every 5s: CPU from /proc/stat, memory
+// from /proc/meminfo, GPU from each ffmpeg's DRM engine counters.
+function meter(label, percent, text, title) {
+  const level = percent >= 95 ? " bad" : percent >= 85 ? " warn" : "";
+  const width = Math.max(0, Math.min(100, Number(percent) || 0));
+  return `<div class="meter${level}" title="${esc(title)}"><b>${label}</b>`
+    + `<span class="bar"><i style="width:${width}%"></i></span>`
+    + `<span class="val">${esc(text)}</span></div>`;
+}
+
+function gpuBusy(engines) {
+  return Math.max(Number(engines?.video || 0), Number(engines?.render || 0));
+}
+
+function renderMeters() {
+  const host = state.data.host || {};
+  const parts = [];
+  const cpu = host.cpu;
+  parts.push(cpu
+    ? meter("CPU", cpu.busy, `${Math.round(cpu.busy)}%`,
+            `${cpu.busy}% of ${cpu.cores} cores busy`
+            + (cpu.steal ? ` · ${cpu.steal}% steal: time spent waiting for the host` : ""))
+    : meter("CPU", 0, "…", "Measuring: the first figure appears after a few seconds"));
+  const mem = host.memory;
+  if (mem) {
+    const gb = (bytes) => (bytes / 1073741824).toFixed(1);
+    const pct = 100 * mem.used / mem.total;
+    parts.push(meter("RAM", pct, `${gb(mem.used)}/${gb(mem.total)} GB`,
+                     `${Math.round(pct)}% in use (not available to new programs)`));
+  }
+  const gpu = host.gpu, clock = host.gpu_clock;
+  if (gpu || clock) {
+    const e = gpu?.engines || {};
+    const busy = gpuBusy(e);
+    const detail = [
+      gpu ? `video engine (encoding) ${Number(e.video || 0)}%` : "measuring",
+      gpu ? `render engine (colour conversion) ${Number(e.render || 0)}%` : "",
+      // 0 MHz is how newer chips report a moment of idle, not a fault.
+      clock ? (clock.mhz ? `clock ${clock.mhz} of ${clock.max_mhz} MHz`
+                         : `clock idle (max ${clock.max_mhz} MHz)`) : "",
+    ].filter(Boolean).join(" · ");
+    parts.push(meter("GPU", busy, gpu ? `${Math.round(busy)}%` : "…", detail));
+  }
+  document.getElementById("meters").innerHTML = parts.join("");
 }
 
 function card(dash) {
@@ -392,6 +458,7 @@ function render() {
 }
 
 function renderPage() {
+  renderMeters();
   const cards = document.getElementById("cards");
   const list = state.data.dashboards || [];
   if (!list.length) {

@@ -103,6 +103,20 @@ The stream units already allow it: `dashboard-stream@.service` keeps a closed
 device policy, admits only DRM render nodes (`DeviceAllow=char-drm rw`) and
 runs with the `render` group.
 
+## Watching the load
+
+The streamer page shows **CPU**, **RAM** and **GPU** bars in its header, and
+each channel on the GPU gets a `gpu %` chip. The GPU figure is the busier of
+the video engine (encoding) and the render engine (colour conversion); the
+tooltip shows both and the GPU clock.
+
+None of it needs root. CPU and memory come from `/proc/stat` and
+`/proc/meminfo`. For the GPU, the i915 driver publishes in
+`/proc/<pid>/fdinfo` how long each engine has been busy for every process
+with the GPU open, and a service may read that for processes of its own
+account, which the stream units are. `intel_gpu_top` shows the same engines
+as root, if you ever want a second opinion.
+
 ## What changes in the stream
 
 Nothing a receiver can tell apart: H.264 Main at level 4.0, a keyframe every

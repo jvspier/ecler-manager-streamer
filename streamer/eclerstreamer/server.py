@@ -21,7 +21,7 @@ from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import __version__, config as config_mod, control
+from . import __version__, config as config_mod, control, metrics
 from .auth import SESSION_COOKIE, Auth
 
 log = logging.getLogger(__name__)
@@ -305,7 +305,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _state(self) -> dict:
         cfg = self._load()
+        host = self.sampler.latest()
+        per_group = (host.get("gpu") or {}).get("groups", {})
         return {
+            "host": host,
             "version": __version__,
             "systemd": control.available(),
             "config": {
@@ -319,7 +322,8 @@ class Handler(BaseHTTPRequestHandler):
                      display_name=d.display_name,
                      multicast=config_mod.multicast_for(d.channel),
                      status=control.status(d.channel),
-                     progress=control.progress(d.channel))
+                     progress=control.progress(d.channel),
+                     gpu=per_group.get(config_mod.multicast_for(d.channel)))
                 for d in cfg.dashboards
             ],
             "server_time": time.time(),
@@ -601,6 +605,8 @@ def make_server(config_path: Path, host: str, port: int,
         # otherwise read, edit and write the same file over each other.
         "lock": threading.Lock(),
         "streams_lock": threading.Lock(),
+        # One per server; its thread starts on the first page load.
+        "sampler": metrics.Sampler(),
     })
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
