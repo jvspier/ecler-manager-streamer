@@ -419,6 +419,26 @@ class TestHttp(unittest.TestCase):
         self._post("/api/dashboards", {"channel": 7})
         self.assertIsNotNone(config_mod.load(self.path).dashboard(7))
 
+    def test_a_channel_without_a_url_cannot_be_turned_on(self):
+        """It would only exit with "no URL set", the reason buried in the
+        journal and the page saying just "failed" (2026-10-27)."""
+        self._post("/api/dashboards", {"channel": 4})          # no URL
+        for path, body in (("/api/dashboards/4", {"enabled": True}),
+                           ("/api/dashboards/4/enable", {}),
+                           ("/api/dashboards/4/start", {}),
+                           ("/api/dashboards/4/restart", {})):
+            with self.subTest(path=path):
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    self._post(path, body)
+                self.assertEqual(caught.exception.code, 400)
+                self.assertIn(b"no URL saved", caught.exception.read())
+        self.assertFalse(config_mod.load(self.path).dashboard(4).enabled)
+
+    def test_url_and_enabled_in_one_request_is_fine(self):
+        self._post("/api/dashboards", {"channel": 4})
+        self._post("/api/dashboards/4", {"url": "https://x/", "enabled": True})
+        self.assertTrue(config_mod.load(self.path).dashboard(4).enabled)
+
     def test_duplicate_channel_is_refused(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self._post("/api/dashboards", {"channel": 5})

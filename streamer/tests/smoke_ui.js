@@ -133,6 +133,24 @@ try {
     }
   }
 
+  // A dashboard with no saved URL: Enable warns and sends nothing at all.
+  STATE.dashboards.push({ ...STATE.dashboards[0], channel: 4, url: "",
+                          display_name: ":104", multicast: "239.255.42.46" });
+  const before = calls.length;
+  const enable4 = { dataset: { act: "enable", ch: "4" }, disabled: false };
+  for (const [, fn, node] of listeners.filter(([type]) => type === "click")) {
+    if (node) continue;
+    try {
+      await fn({ target: { closest: (sel) => sel.includes("data-act") ? enable4 : null } });
+    } catch (err) {
+      fail("threw enabling a channel with no URL", err);
+    }
+  }
+  if (calls.slice(before).some(([url]) => String(url).includes("/api/dashboards/4"))) {
+    fail("enabled a channel with no URL", "a request for channel 4 was sent");
+  }
+  STATE.dashboards.pop();
+
   // The first page load after a restart: no rates yet, no GPU at all.
   STATE.host = { memory: STATE.host.memory };
   const refresh = listeners.find(([type, , node]) => type === "click" && node && node.id === "refresh");

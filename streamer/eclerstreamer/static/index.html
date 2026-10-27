@@ -115,6 +115,7 @@
 
   .row { display: flex; gap: 7px; align-items: center; }
   .row > .grow { flex: 1 1 auto; min-width: 0; }
+  [data-act="save-url"] { white-space: nowrap; }
   .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   .settings label { font-size: 11px; color: var(--muted); display: block;
                     margin-bottom: 3px; }
@@ -374,8 +375,10 @@ function card(dash) {
       : `<div class="shot shot-empty">not streaming</div>`}
     <div class="row">
       <input class="grow" id="url-${dash.channel}" placeholder="https://dashboard/"
-             value="${esc(draftOr("url-" + dash.channel, dash.url))}">
-      <button data-act="save-url" data-ch="${dash.channel}">Save</button>
+             value="${esc(draftOr("url-" + dash.channel, dash.url))}"
+             data-saved="${esc(dash.url || "")}">
+      ${saveUrlButton(dash.channel,
+                      draftOr("url-" + dash.channel, dash.url).trim() !== (dash.url || ""))}
     </div>
     <div class="row">
       ${dash.enabled
@@ -497,6 +500,38 @@ async function load() {
   }
 }
 
+// The URL has its own Save, apart from "Save settings", and the page keeps
+// typed text across refreshes -- so a URL could look entered and never have
+// been saved. Light the button up while the field differs from what is saved.
+function saveUrlButton(channel, unsaved) {
+  return `<button data-act="save-url" data-ch="${channel}"`
+    + (unsaved ? ' class="primary" title="Not saved yet"' : "")
+    + `>${unsaved ? "Save URL" : "Save"}</button>`;
+}
+
+document.addEventListener("input", (event) => {
+  const field = event.target;
+  if (!field.id || !field.id.startsWith("url-") || field.dataset.saved === undefined) return;
+  const button = field.parentElement?.querySelector('[data-act="save-url"]');
+  if (!button) return;
+  button.outerHTML = saveUrlButton(field.id.slice(4),
+                                   field.value.trim() !== field.dataset.saved);
+});
+
+// Before enable/start/restart: a channel with no saved URL only fails, with
+// the reason in the journal. Say it here instead.
+function urlProblem(channel) {
+  const dash = (state.data.dashboards || []).find((d) => d.channel === channel);
+  if (!dash) return null;
+  const typed = (document.getElementById(`url-${channel}`)?.value || "").trim();
+  if (!dash.url) {
+    return typed
+      ? `Channel ${channel}: the URL is typed but not saved. Press "Save URL" next to it first.`
+      : `Channel ${channel} has no URL yet. Enter it and press Save next to it first.`;
+  }
+  return null;
+}
+
 async function act(channel, action, body) {
   return api(`/api/dashboards/${channel}` + (action ? `/${action}` : ""),
              { method: "POST", body: JSON.stringify(body || {}) });
@@ -562,6 +597,8 @@ document.addEventListener("click", async (event) => {
       // One word, one meaning: on in the config, running now, and running
       // again after a reboot. Leaving those three apart is how a dashboard
       // quietly fails to come back.
+      const problem = urlProblem(channel);
+      if (problem) return toast(problem, "bad");
       await act(channel, null, { enabled: true });
       await act(channel, "enable");
       await act(channel, "start");
@@ -582,6 +619,10 @@ document.addEventListener("click", async (event) => {
       // start / stop / restart
       if (action === "stop" && !confirm(
             `Stop channel ${channel}?\n\nEvery screen on it goes blank.`)) return;
+      if (action !== "stop") {
+        const problem = urlProblem(channel);
+        if (problem) return toast(problem, "bad");
+      }
       await act(channel, action);
       toast(`Channel ${channel}: ${action}ed`, "ok");
     }

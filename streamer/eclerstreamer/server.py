@@ -33,6 +33,8 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 # settings -- and is cached, so polling it cannot pile up systemctl calls.
 PUBLIC_PATHS = {"/login", "/healthz", "/api/streams"}
 STREAMS_CACHE_SECONDS = 5.0
+NO_URL = ("channel {channel} has no URL saved. Enter it and press the Save "
+          "button next to it first")
 MAX_BODY_BYTES = 64 * 1024
 
 _DASHBOARD_ROUTE = re.compile(r"^/api/dashboards/(\d{1,2})(?:/([a-z-]{1,16}))?$")
@@ -498,6 +500,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "size looks like 1920x1080")
                 dash.size = size
             if "enabled" in body:
+                if body["enabled"] and not dash.url:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, NO_URL.format(channel=channel))
                 dash.enabled = bool(body["enabled"])
             if "encoder" in body:
                 if body["encoder"] not in config_mod.ENCODERS:
@@ -528,6 +532,12 @@ class Handler(BaseHTTPRequestHandler):
                 cfg.save()
             return self._send_json({"ok": True})
 
+        if action in ("enable", "start", "restart"):
+            # The stream would exit at once with "no URL set" -- visible only
+            # in the journal, with the page just saying "failed".
+            dash = self._load().dashboard(channel)
+            if dash is not None and not dash.url:
+                raise ApiError(HTTPStatus.BAD_REQUEST, NO_URL.format(channel=channel))
         try:
             ok, message = control.act(channel, action)
         except ValueError as exc:
