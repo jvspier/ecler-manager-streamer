@@ -380,6 +380,13 @@ class TestRecentDrops(unittest.TestCase):
             self.assertGreater(size, 4 * control.RECENT_TAIL_BYTES)
             self.assertEqual(control.recent_drops(2, tmp), 250)
 
+    def test_a_deleted_channel_leaves_no_progress_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(tmp, {}, hours=0.1, channel=5)
+            control.forget_progress(5, tmp)
+            self.assertFalse(Path(tmp, "progress-5.txt").exists())
+            control.forget_progress(5, tmp)          # already gone: no error
+
     def test_no_file_and_a_fresh_stream(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(control.recent_drops(2, tmp))

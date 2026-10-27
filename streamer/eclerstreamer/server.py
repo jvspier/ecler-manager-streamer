@@ -529,6 +529,7 @@ class Handler(BaseHTTPRequestHandler):
                 # every direction, deletion included.
                 control.act(channel, "stop")
                 control.act(channel, "disable")
+                control.forget_progress(channel)
                 cfg.dashboards = [d for d in cfg.dashboards if d.channel != channel]
                 cfg.save()
             return self._send_json({"ok": True})

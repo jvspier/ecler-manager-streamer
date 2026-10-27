@@ -259,3 +259,51 @@ class TestUnknownAddresses(unittest.TestCase):
                 capture_output=True, text=True, timeout=30)
         self.assertEqual(done.returncode, 2)
         self.assertIn("outside 1-7", done.stderr)
+
+
+class TestProgressWindow(unittest.TestCase):
+    """The progress file stays bounded however long a stream runs.
+
+    Written straight by ffmpeg it grew ~1.9 MB a day -- 39 MB after three
+    weeks -- in /run, which is RAM with a fixed size shared with systemd.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        import teststream
+        self.teststream = teststream
+
+    @staticmethod
+    def _block(n):
+        return [f"frame={n * 300}", "fps=30.00", f"out_time=00:00:{n * 10 % 60:02d}.000000",
+                f"drop_frames={n}", "speed=1x", "progress=continue"]
+
+    def test_bounded_and_never_short_of_the_window(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "progress-2.txt"
+            window = self.teststream.ProgressWindow(str(path), keep_seconds=50, period=10)
+            self.assertEqual(window.size, 5)
+            for n in range(1, 41):
+                for line in self._block(n):
+                    window.feed(line)
+                text = path.read_text()
+                blocks = text.count("progress=")
+                self.assertLessEqual(blocks, 10, f"after {n} blocks")
+                self.assertGreaterEqual(blocks, min(n, 5), f"after {n} blocks")
+                self.assertTrue(text.endswith(f"drop_frames={n}\nspeed=1x\nprogress=continue\n"))
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["progress-2.txt"])
+
+    def test_a_running_service_reads_progress_through_a_pipe(self):
+        def build(extra):
+            a = self.teststream.build_parser().parse_args(
+                ["--group", "239.255.42.48", "--progress-file", "/run/x"] + extra)
+            a.capture_display = a.from_display
+            return a
+        args = build([])
+        args.progress_via_pipe = True
+        cmd = self.teststream.build_command(args)
+        self.assertEqual(cmd[cmd.index("-progress") + 1], "pipe:1")
+        args = build([])                       # --detach: ffmpeg writes the file
+        cmd = self.teststream.build_command(args)
+        self.assertEqual(cmd[cmd.index("-progress") + 1], "/run/x")

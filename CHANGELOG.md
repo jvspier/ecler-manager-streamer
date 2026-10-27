@@ -14,6 +14,11 @@ manager and the streamer.
 - **The "dropped" chip counts only recent bursts**: frames dropped in the last
   hour because the encoder fell behind. Single frames about once an hour are
   clock drift and no longer turn a healthy channel red after a few weeks.
+- Fixed: **each channel's progress file grew for as long as the stream ran**,
+  ~1.9 MB a day, in `/run`, which is RAM with a fixed size shared with
+  systemd: 39 MB after three weeks, and full in a few months on a host that
+  never restarts. It now keeps the last 24 hours, never more than 48. A
+  deleted dashboard's file is removed with it.
 
 ## 1.1.0 — 2026-10-06
 

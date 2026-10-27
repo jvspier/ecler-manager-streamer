@@ -132,6 +132,15 @@ def _seconds(out_time: str) -> float | None:
         return None
 
 
+def forget_progress(channel: int, run_dir: str = "/run/eclerstreamer") -> None:
+    """Remove a deleted channel's progress file: /run is RAM, and nothing
+    else ever would (a 9.4 MB one outlived its dashboard by three weeks)."""
+    try:
+        (Path(run_dir) / f"progress-{int(channel)}.txt").unlink()
+    except OSError:
+        pass
+
+
 def recent_drops(channel: int, run_dir: str = "/run/eclerstreamer",
                  window: float = RECENT_DROPS_SECONDS) -> int | None:
     """Frames dropped in bursts during the last `window` of stream time.

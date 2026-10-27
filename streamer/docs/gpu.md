@@ -16,8 +16,9 @@ same site, with the same announcement videos):
 
 Both also dropped one frame roughly every 56 minutes. That is drift between
 the capture clock and the output clock, about 10 ppm, and invisible on screen.
-The bursts come from `/run/eclerstreamer/progress-<channel>.txt`, which keeps
-the encoder's counters since the stream started:
+The bursts come from `/run/eclerstreamer/progress-<channel>.txt`, which holds
+the encoder's counters for the last 24 hours (at most 48, so it cannot fill
+`/run`, which is RAM):
 
 ```bash
 awk -F= '/^out_time=/{split($2,a,"."); t=a[1]}
@@ -28,7 +29,7 @@ awk -F= '/^out_time=/{split($2,a,"."); t=a[1]}
 
 Each line is a 10-second window, timed from the stream's start
 (`systemctl show -p ExecMainStartTimestamp dashboard-stream@6`). A restart
-starts a new file, so read it first.
+starts a new file, so read it first, and anything older than a day is gone.
 
 Each channel has an **Encoder** setting on the streamer page: *Processor
 (x264)* or *Graphics chip (VAAPI)*. It takes effect when that channel

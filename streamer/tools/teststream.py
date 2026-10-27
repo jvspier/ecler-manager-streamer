@@ -52,7 +52,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -452,6 +454,59 @@ def vaapi_video_args(args: argparse.Namespace, gop: int) -> list[str]:
     return video
 
 
+class ProgressWindow:
+    """The last `keep_seconds` of ffmpeg's progress, kept in a file.
+
+    Each block is appended as it arrives; once as many have been appended as
+    the window holds, the file is rewritten with just the window, atomically.
+    So it never exceeds twice the window, and a reader always finds at least
+    the window's worth -- the page's "dropped in the last hour" needs one.
+    """
+
+    def __init__(self, path: str, keep_seconds: float, period: float) -> None:
+        self.path = Path(path)
+        self.size = max(2, int(keep_seconds / max(period, 0.1)))
+        self.blocks: deque[str] = deque(maxlen=self.size)
+        self.appended = 0
+        self.current: list[str] = []
+        self._write("")                     # start fresh, as ffmpeg did
+
+    def feed(self, line: str) -> None:
+        self.current.append(line)
+        if not line.startswith("progress="):
+            return
+        block = "\n".join(self.current) + "\n"
+        self.current = []
+        self.blocks.append(block)
+        try:
+            if self.appended >= self.size:
+                self._write("".join(self.blocks))
+                self.appended = 0
+            else:
+                with self.path.open("a", encoding="utf-8") as handle:
+                    handle.write(block)
+                self.appended += 1
+        except OSError:
+            pass            # a missed report must never stall the encoder
+
+    def _write(self, text: str) -> None:
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+
+def pump_progress(stream, window: ProgressWindow) -> None:
+    """Drain ffmpeg's progress pipe for as long as ffmpeg writes to it.
+
+    It must always be read: a full pipe would block ffmpeg itself.
+    """
+    for raw in stream:
+        window.feed(raw.decode("utf-8", "replace").rstrip("\n"))
+
+
 def build_command(args: argparse.Namespace) -> list[str]:
     if getattr(args, "mimic_veo", False):
         # Everything the hardware stream has that ours did not: an MPEG
@@ -469,11 +524,18 @@ def build_command(args: argparse.Namespace) -> list[str]:
     if args.progress_file:
         # To a file rather than the journal, so the web UI can read the
         # encoder's own numbers instead of inferring health from "the process
-        # is alive". ffmpeg truncates this on open, so it resets every restart
-        # and cannot grow without bound -- which also means the card has
-        # nothing to show until the first period elapses, hence 10s rather
-        # than something longer.
-        cmd += ["-nostats", "-progress", args.progress_file,
+        # is alive". The card has nothing to show until the first period
+        # elapses, hence 10s rather than something longer.
+        #
+        # Not straight from ffmpeg to the file, though, in a running service:
+        # ffmpeg appends a block every period for as long as it runs. That
+        # file starts over on a restart, but a stream that is never restarted
+        # grew it by ~1.9 MB a day -- 39 MB in three weeks, in /run, which is
+        # RAM with a fixed size shared with systemd. Through a pipe instead,
+        # and ProgressWindow keeps a bounded window of it on disk.
+        target = ("pipe:1" if getattr(args, "progress_via_pipe", False)
+                  else args.progress_file)
+        cmd += ["-nostats", "-progress", target,
                 "-stats_period", str(args.stats_seconds)]
     elif not sys.stdout.isatty():
         # ffmpeg's normal status line is redrawn with carriage returns and no
@@ -650,6 +712,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--progress-file", default=None, metavar="PATH",
                         help="write ffmpeg's progress here as key=value "
                              "lines, for something else to read")
+    parser.add_argument("--progress-keep-hours", type=float, default=24.0,
+                        metavar="N",
+                        help="how much of the progress a --progress-file keeps "
+                             "(default 24); it never grows past twice this")
     parser.add_argument("--stats-seconds", type=float, default=10.0,
                         metavar="N",
                         help="how often to report progress when not on a "
@@ -771,6 +837,10 @@ def main(argv: list[str] | None = None) -> int:
               "  That shows up as judder, most visibly during fades. Consider "
               f"{args.fps}/2 or {args.fps}/6.", file=sys.stderr)
 
+    # A running service reads ffmpeg's progress through a pipe and keeps a
+    # bounded window of it (ProgressWindow); --detach is a short manual test,
+    # so ffmpeg writes the file itself there.
+    args.progress_via_pipe = bool(args.progress_file and not args.detach)
     command = build_command(args)
 
     if args.dry_run:
@@ -833,7 +903,13 @@ def main(argv: list[str] | None = None) -> int:
     # unit with SIGTERM, whose default action kills this process outright so no
     # cleanup runs; and a page started with --url would then be left behind,
     # an Xvfb and a browser still holding a gigabyte with nothing reading them.
-    process = subprocess.Popen(command)
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE if args.progress_via_pipe else None)
+    if args.progress_via_pipe:
+        window = ProgressWindow(args.progress_file,
+                                args.progress_keep_hours * 3600, args.stats_seconds)
+        threading.Thread(target=pump_progress, args=(process.stdout, window),
+                         name="progress", daemon=True).start()
     asked_to_stop = False
 
     def _relay(_signum, _frame):
