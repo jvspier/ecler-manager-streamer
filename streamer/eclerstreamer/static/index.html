@@ -286,9 +286,14 @@ function statusChips(dash) {
     // while the browser was still painting, never come back out of it.
     chips.push(`<span class="chip${pace && pace < 0.95 ? " warn" : ""}">${esc(p.speed)}</span>`);
   }
-  const dropped = Number(p.drop_frames || 0);
-  if (dropped > 0) {
-    chips.push(`<span class="chip bad">${dropped} dropped</span>`);
+  // Only bursts in the last hour: frames dropped because the machine fell
+  // behind. Single frames about once an hour are clock drift, harmless, and
+  // a running total of them turned a healthy channel red after a few weeks.
+  const recent = Number(dash.recent_drops || 0);
+  if (recent > 0) {
+    const total = Number(p.drop_frames || 0);
+    chips.push(`<span class="chip bad" title="${esc(
+      `Frames skipped in the last hour because the encoder fell behind. ${total} since the stream started, including harmless single frames about once an hour.`)}">${recent} dropped in the last hour</span>`);
   }
   if (s.active === "active" && dash.gpu) {
     // This channel's share of the GPU, so the busy one stands out.

@@ -117,6 +117,69 @@ def progress_age(channel: int, run_dir: str = "/run/eclerstreamer",
     return max(0.0, (time.time() if now is None else now) - modified)
 
 
+#: "Dropped" on the page means bursts within this much recent stream time.
+RECENT_DROPS_SECONDS = 3600
+#: An hour of 10s progress blocks is about 90 KB; read a margin more.
+RECENT_TAIL_BYTES = 256 * 1024
+
+
+def _seconds(out_time: str) -> float | None:
+    """ffmpeg's out_time, "HHH:MM:SS.ffffff", in seconds."""
+    try:
+        hours, minutes, seconds = out_time.strip().split(":")
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    except ValueError:
+        return None
+
+
+def recent_drops(channel: int, run_dir: str = "/run/eclerstreamer",
+                 window: float = RECENT_DROPS_SECONDS) -> int | None:
+    """Frames dropped in bursts during the last `window` of stream time.
+
+    A burst is more than one frame dropped between two 10s reports: the
+    encoder fell behind. Single frames, roughly one an hour, are drift
+    between the capture and output clocks -- harmless, and on a stream that
+    runs for weeks they add up to hundreds, which a cumulative counter showed
+    as a red warning on a perfectly healthy channel (543 in three weeks, all
+    drift). None if there is no progress file.
+    """
+    path = Path(run_dir) / f"progress-{int(channel)}.txt"
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            start = max(0, handle.tell() - RECENT_TAIL_BYTES)
+            handle.seek(start)
+            tail = handle.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return None
+    lines = tail.splitlines()
+    if start > 0 and lines:
+        lines = lines[1:]                   # the first line may be cut short
+    blocks: list[tuple[float, int]] = []
+    when, dropped = None, None
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key == "out_time":
+            when = _seconds(value)
+        elif key == "drop_frames":
+            try:
+                dropped = int(value)
+            except ValueError:
+                dropped = None
+        elif key == "progress":
+            if when is not None and dropped is not None:
+                blocks.append((when, dropped))
+            when, dropped = None, None
+    if len(blocks) < 2:
+        return 0 if blocks else None
+    newest = blocks[-1][0]
+    total = 0
+    for (_, before), (at, after) in zip(blocks, blocks[1:]):
+        if at >= newest - window and after - before > 1:
+            total += after - before
+    return total
+
+
 #: Progress older than this means the encoder has stopped writing: three
 #: missed 10s reports, so one slow write is not an alarm.
 STALL_SECONDS = 30.0

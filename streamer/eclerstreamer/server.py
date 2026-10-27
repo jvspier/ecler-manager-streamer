@@ -325,6 +325,7 @@ class Handler(BaseHTTPRequestHandler):
                      multicast=config_mod.multicast_for(d.channel),
                      status=control.status(d.channel),
                      progress=control.progress(d.channel),
+                     recent_drops=control.recent_drops(d.channel),
                      gpu=per_group.get(config_mod.multicast_for(d.channel)))
                 for d in cfg.dashboards
             ],

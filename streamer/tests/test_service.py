@@ -339,6 +339,54 @@ class TestHealth(unittest.TestCase):
                 control.progress_age(5, tmp, now=modified + 12), 12, places=3)
 
 
+class TestRecentDrops(unittest.TestCase):
+    """The page's "dropped" chip: bursts in the last hour, not clock drift."""
+
+    @staticmethod
+    def _write(tmp, events, hours=3.0, channel=2, pad=""):
+        """A progress file with a block every 10s; events maps a block's
+        time in seconds to frames dropped in that block."""
+        lines, dropped, t = [], 0, 0
+        while t <= hours * 3600:
+            dropped += events.get(t, 0)
+            h, rest = divmod(t, 3600)
+            lines += [f"frame={t * 30}", pad + "fps=30.00",
+                      f"out_time={h:02d}:{rest // 60:02d}:{rest % 60:02d}.000000",
+                      "dup_frames=0", f"drop_frames={dropped}",
+                      "speed=1x", "progress=continue"]
+            t += 10
+        Path(tmp, f"progress-{channel}.txt").write_text("\n".join(lines) + "\n")
+
+    def test_hourly_drift_is_not_a_drop(self):
+        """Channel 2 after three weeks: 543 dropped, every one of them a
+        single frame about once an hour."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(tmp, {t: 1 for t in range(3360, 3 * 3600, 3360)})
+            self.assertEqual(control.recent_drops(2, tmp), 0)
+
+    def test_a_burst_within_the_hour_counts_and_an_older_one_does_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(tmp, {3600: 290, 3610: 139,       # two hours ago
+                              9000: 300, 9010: 95,        # 30 minutes ago
+                              9600: 1})                   # drift
+            self.assertEqual(control.recent_drops(2, tmp), 395)
+
+    def test_only_the_tail_of_a_long_file_is_read(self):
+        """Days of blocks; the read stays bounded, and a block cut in half
+        at the start of the tail is not misread."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(tmp, {30 * 3600 - 100: 250}, hours=30, pad="x" * 40)
+            size = Path(tmp, "progress-2.txt").stat().st_size
+            self.assertGreater(size, 4 * control.RECENT_TAIL_BYTES)
+            self.assertEqual(control.recent_drops(2, tmp), 250)
+
+    def test_no_file_and_a_fresh_stream(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(control.recent_drops(2, tmp))
+            self._write(tmp, {}, hours=0)
+            self.assertEqual(control.recent_drops(2, tmp), 0)
+
+
 class TestHttp(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

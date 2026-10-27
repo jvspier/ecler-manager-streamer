@@ -3,6 +3,18 @@
 Both tools share one version number, so a version means the same code on the
 manager and the streamer.
 
+## Unreleased
+
+### Streamer
+
+- **Warns before starting a channel that has no saved URL**, on the page and
+  in the API, instead of letting it fail with the reason only in the journal.
+  The URL's Save button lights up as "Save URL" while the field holds unsaved
+  text.
+- **The "dropped" chip counts only recent bursts**: frames dropped in the last
+  hour because the encoder fell behind. Single frames about once an hour are
+  clock drift and no longer turn a healthy channel red after a few weeks.
+
 ## 1.1.0 — 2026-10-06
 
 ### Manager

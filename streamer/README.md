@@ -132,12 +132,15 @@ carries channel numbers, a verdict and encoder figures (fps, speed, dropped
 frames, start time), and no URLs, names or settings. It is cached for 5
 seconds, so polling it cannot pile up work.
 
-**On the streamer page.** Each card shows the encoder's own figures: fps,
-speed, and frames dropped since the stream started. The header has **CPU**,
-**RAM** and **GPU** bars, and each GPU channel a `gpu %` chip. Frames dropped
-one at a time, roughly hourly, are clock drift and harmless; hundreds at once
-mean the machine fell behind. `docs/gpu.md` shows how to read exactly when
-from the progress file.
+**On the streamer page.** Each card shows the encoder's own figures: fps and
+speed, and a red **dropped in the last hour** chip only when the encoder fell
+behind recently. Single frames dropped roughly once an hour are clock drift,
+harmless, and not counted: on a stream that runs for weeks they add up to
+hundreds, which a running total showed as a warning on a perfectly healthy
+channel. The total since the start is in the chip's tooltip, and
+`docs/gpu.md` shows how to read every burst from the progress file. The
+header has **CPU**, **RAM** and **GPU** bars, and each GPU channel a `gpu %`
+chip.
 
 ## Sessions and scheduled restarts
 

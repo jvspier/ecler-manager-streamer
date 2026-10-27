@@ -33,7 +33,8 @@ const STATE = {
     status: { available: true, active: "active", sub: "running", result: "",
               since: "Tue 2026-10-06 12:00:00 BST", restarts: 0, pid: 42,
               at_boot: true },
-    progress: { fps: "30", speed: "1x", drop_frames: "3" },
+    progress: { fps: "30", speed: "1x", drop_frames: "543" },
+    recent_drops: 0,
     gpu: { render: 15.1, video: 18.4 },
   }],
   server_time: 1757930000,
@@ -53,7 +54,8 @@ function element(id) {
     className: "", dataset: {}, disabled: false, title: "", checked: false,
     style: { _p: {}, setProperty(k, v) { this._p[k] = v; },
              getPropertyValue(k) { return this._p[k] ?? ""; } },
-    appendChild() {}, append() {}, remove() {}, replaceChildren() {},
+    appendChild() {}, append() {}, remove() {},
+    replaceChildren(...kids) { node.children = kids; },   // so tests can read cards
     addEventListener(type, fn) { listeners.push([type, fn, node]); },
     setAttribute() {}, getAttribute() { return "false"; },
     querySelector() { return element("q"); },
@@ -132,6 +134,21 @@ try {
       }
     }
   }
+
+  // The dropped chip counts recent bursts only, never the drift total.
+  const refreshButton = listeners.find(([type, , node]) => type === "click" && node && node.id === "refresh");
+  const renderedCard = async (index) => {
+    await refreshButton[1]({});
+    return (byId("cards").children || [])[index]?.innerHTML || "";
+  };
+  if ((await renderedCard(1)).includes("dropped")) {
+    fail("showed drift as dropped", "543 drift drops made a chip");
+  }
+  STATE.dashboards[1].recent_drops = 395;
+  if (!(await renderedCard(1)).includes("395 dropped in the last hour")) {
+    fail("hid a real burst", "no chip for 395 recent drops");
+  }
+  STATE.dashboards[1].recent_drops = 0;
 
   // A dashboard with no saved URL: Enable warns and sends nothing at all.
   STATE.dashboards.push({ ...STATE.dashboards[0], channel: 4, url: "",
